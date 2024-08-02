@@ -1,3 +1,9 @@
+![image](https://github.com/mytechnotalent/rea/blob/main/Reverse%20Engineering%20Assistant.png?raw=true)
+
+## FREE Reverse Engineering Self-Study Course [HERE](https://github.com/mytechnotalent/Reverse-Engineering-Tutorial)
+
+<br>
+
 # Reverse Engineering Assistant
 Reverse Engineering Assistant utilizing RAG and an LLM.
 
@@ -443,4 +449,12 @@ if __name__ == '__main__':
     
     To create a public link, set `share=True` in `launch()`.
 
+
+## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+Please make sure to update tests as appropriate.
+
+## License
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 

@@ -367,3 +367,11 @@ iface.launch()
     Running on local URL:  http://127.0.0.1:7860
     
     To create a public link, set `share=True` in `launch()`.
+
+## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+Please make sure to update tests as appropriate.
+
+## License
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0)

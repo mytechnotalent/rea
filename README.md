@@ -830,8 +830,6 @@ iface.launch()
     
     To create a public link, set `share=True` in `launch()`.
 
-<div><iframe src="http://127.0.0.1:7861/" width="100%" height="500" allow="autoplay; camera; microphone; clipboard-read; clipboard-write;" frameborder="0" allowfullscreen></iframe></div>
-
 ![image](https://github.com/mytechnotalent/rea/blob/main/example.png?raw=true)
 
 ## Contributing

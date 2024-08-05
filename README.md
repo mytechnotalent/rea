@@ -15,21 +15,26 @@ For further reading and a deeper understanding of RAG, refer to the original pap
 
 ## Overview of the RAG Architecture
 
-The RAG model consists of two main components:
-1. **Retriever**: This component retrieves relevant documents from a large corpus based on the input query.
-2. **Generator**: This component generates responses conditioned on the retrieved documents.
+The RAG model consists of three main components:
+1. **Indexer**: This component creates an index of the corpus to facilitate efficient retrieval of relevant documents.
+2. **Retriever**: This component retrieves relevant documents from the indexed corpus based on the input query.
+3. **Generator**: This component generates responses conditioned on the retrieved documents.
 
 ## Mathematical Formulation
 
+### Indexer
+
+The indexer preprocesses the corpus $\mathcal{D}$ to create an index that maps queries to relevant documents. This index is used by the retriever for efficient document retrieval.
+
 ### Retriever
 
-The retriever selects the top $k$ documents from a corpus $\mathcal{D}$ based on their relevance to the input query $q$.
+The retriever selects the top $k$ documents from the indexed corpus $\mathcal{D}$ based on their relevance to the input query $q$. The relevance of a document $d_i$ to a query $q$ is denoted as $s(q, d_i)$.
 
 ### Generator
 
-The generator produces a response $r$ based on the input query $q$ and the retrieved documents $\{d_1, d_2, \ldots, d_k\}$.
+The generator produces a response $r$ based on the input query $q$ and the retrieved documents $\{d_1, d_2, \ldots, d_k\}$. The probability of generating a response $r$ given the query $q$ and a document $d_i$ is denoted as $P(r \mid q, d_i)$.
 
-### Combining Retriever and Generator
+### Combining Indexer, Retriever, and Generator
 
 The final probability of generating a response $r$ given the query $q$ is obtained by marginalizing over the top $k$ retrieved documents:
 
@@ -43,19 +48,23 @@ Here, $P(d_i \mid q)$ is the normalized relevance score of document $d_i$ given 
 
 ### Training
 
-The RAG model is trained in two stages:
-1. **Retriever Training**: The retriever is trained to maximize the relevance score $s(q, d_i)$ for relevant documents.
-2. **Generator Training**: The generator is trained to maximize the probability $P(r \mid q, d_i)$ for the ground-truth responses.
+The RAG model is trained in three stages:
+1. **Indexer Training**: The indexer is trained to create an efficient and accurate mapping of queries to documents.
+2. **Retriever Training**: The retriever is trained to maximize the relevance score $s(q, d_i)$ for relevant documents.
+3. **Generator Training**: The generator is trained to maximize the probability $P(r \mid q, d_i)$ for the ground-truth responses.
 
 ### Inference
 
-During inference, the RAG model retrieves the top $k$ documents for a given query and generates a response conditioned on these documents. The final response is obtained by marginalizing over the retrieved documents as described above.
+During inference, the RAG model follows these steps:
+1. **Indexing**: The corpus is indexed to facilitate efficient retrieval.
+2. **Retrieval**: The top $k$ documents are retrieved for a given query based on their relevance scores.
+3. **Generation**: A response is generated conditioned on the input query and the retrieved documents. The final response is obtained by marginalizing over the retrieved documents as described above.
 
 ## Conclusion
 
-RAG leverages the strengths of both retrieval-based and generation-based models to produce more accurate and informative responses. By conditioning the generation on retrieved documents, RAG can incorporate external knowledge from large corpora, leading to better performance on various tasks.
+RAG leverages the strengths of indexing, retrieval-based, and generation-based models to produce more accurate and informative responses. By conditioning the generation on retrieved documents, RAG can incorporate external knowledge from large corpora, leading to better performance on various tasks.
 
-The combination of retriever and generator in the RAG model makes it a powerful approach for tasks that require access to external knowledge and the ability to generate coherent and contextually appropriate responses.
+The combination of indexer, retriever, and generator in the RAG model makes it a powerful approach for tasks that require access to external knowledge and the ability to generate coherent and contextually appropriate responses.
 
 ### Install Conda Environment
 1. To select a Conda environment in Visual Studio Code, press the play button in the next cell which will open up a command prompt then select `Python Environments...`

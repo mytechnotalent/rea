@@ -85,6 +85,9 @@ mod elf;
 /// Raw Cortex-M firmware loader.
 mod firmware;
 
+/// U-Boot legacy image loader.
+mod uimage;
+
 /// Packing and obfuscation assessment.
 pub mod packer;
 
@@ -93,6 +96,9 @@ mod pe;
 
 /// Packed relative relocation decoding.
 mod relr;
+
+/// SquashFS rootfs extraction and binary triage.
+pub mod squashfs;
 
 /// Printable string extraction.
 pub mod strings;
@@ -107,3 +113,4 @@ pub use analysis::{analyze, analyze_path, Analysis};
 pub use discover::Finding;
 pub use emulate::{Emulation, Stop};
 pub use error::EngineError;
+pub use squashfs::{FirmwareTriage, SecurityArtifact, SquashfsMeta};

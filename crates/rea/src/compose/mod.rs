@@ -38,6 +38,9 @@ mod identity;
 /// Imports, exports, and capabilities.
 mod imports;
 
+/// Firmware filesystem and artifacts.
+mod firmware;
+
 /// Methodology and limitations.
 mod method;
 
@@ -60,13 +63,14 @@ pub mod text;
 use rea_engine::Analysis;
 
 // Import dependencies from rea_report
-use rea_report::{Document, Section};
+use rea_report::{Block, Document, Section};
 
 /// Report section builders, in reading order.
-const SECTIONS: [fn(&Analysis) -> Vec<Section>; 9] = [
+const SECTIONS: [fn(&Analysis) -> Vec<Section>; 10] = [
     summary::sections,
     identity::sections,
     structure::sections,
+    firmware::sections,
     imports::sections,
     strings::sections,
     code::sections,
@@ -75,20 +79,62 @@ const SECTIONS: [fn(&Analysis) -> Vec<Section>; 9] = [
     method::sections,
 ];
 
+/// Appends a paragraph or subheading chunk.
+///
+/// # Arguments
+///
+/// * `section` - Destination section.
+/// * `chunk` - Text chunk.
+///
+/// # Returns
+///
+/// Updated section.
+fn append_chunk(section: Section, chunk: &str) -> Section {
+    if chunk.is_empty() {
+        section
+    } else if chunk.starts_with('#') {
+        let title = chunk.trim_start_matches('#').trim();
+        section.with(text::subheading(title))
+    } else {
+        section.with(Block::Paragraph(chunk.to_string()))
+    }
+}
+
+/// Parses the assessment markdown text into a report section.
+///
+/// # Arguments
+///
+/// * `text` - Assessment markdown.
+///
+/// # Returns
+///
+/// Populated section.
+fn assessment_section(text: &str) -> Section {
+    let mut section = Section::new("Autonomous Security Assessment");
+    for chunk in text.split("\n\n") {
+        section = append_chunk(section, chunk.trim());
+    }
+    section
+}
+
 /// Composes the complete report for one analysis.
 ///
 /// # Arguments
 ///
 /// * `analysis` - Completed analysis.
+/// * `assessment` - AI analyst narrative, when available.
 ///
 /// # Returns
 ///
 /// The format-neutral report document.
 #[must_use]
-pub fn build(analysis: &Analysis) -> Document {
+pub fn build(analysis: &Analysis, assessment: Option<&str>) -> Document {
     let title = format!("Reverse Engineering Report: {}", analysis.name);
     let mut document = Document::new(&title, &subtitle(analysis));
-    document.sections = SECTIONS.iter().flat_map(|build| build(analysis)).collect();
+    document.sections = SECTIONS.iter().flat_map(|b| b(analysis)).collect();
+    if let Some(text) = assessment {
+        document.sections.insert(1, assessment_section(text));
+    }
     document
 }
 
@@ -116,7 +162,7 @@ mod tests {
     #[test]
     fn test_build_unknown_data() {
         let analysis = rea_engine::analyze("blob.bin", b"plain text with http://example.test");
-        let document = build(&analysis);
+        let document = build(&analysis, None);
         assert!(document.title.ends_with("blob.bin"));
         assert!(document.sections.len() >= 4);
     }
@@ -127,7 +173,7 @@ mod tests {
         let path = std::env::current_exe().unwrap();
         let analysis = rea_engine::analyze_path(&path).unwrap();
         let headings: Vec<String> =
-            build(&analysis).sections.into_iter().map(|s| s.heading).collect();
+            build(&analysis, None).sections.into_iter().map(|s| s.heading).collect();
         assert!(headings.iter().any(|h| h == "Key Functions"));
     }
 }

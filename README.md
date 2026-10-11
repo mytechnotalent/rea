@@ -4,40 +4,73 @@
 
 <br>
 
-# Reverse Engineering Assistant
+# Reverse Engineering Assistant (REA) v2.0.0
 
-**Point it at a binary. Get a complete reverse engineering report.**
+**Point it at a target. Get a complete reverse engineering dossier and autonomous security assessment.**
 
 ```bash
-rea suspect.exe
+rea suspect
 ```
 
-Writes `re-suspect.md` and `re-suspect.pdf` next to the file. That's the whole workflow.
+Writes `re-suspect.md` and `re-suspect.pdf` next to the target. That's the whole workflow.
 
-**Binaries in. Answers out.** One command. Fully offline. Built in Rust.
+**Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and deterministic engine. Built in 100% pure Rust.
+
+<br>
+
+# New in v2.0.0
+
+REA v2.0.0 expands from a purely deterministic tool into a hybrid autonomous reverse engineering platform with built-in multi-agent AI analysis, pure-Rust firmware rootfs extraction, and sub-target deep-dive triage:
+
+- **Autonomous Multi-Agent AI Analyst Loop**: An automated 3-stage peer-reviewed deliberation loop (Analyst $\to$ Reviewer $\to$ Adjudicator) synthesizes findings into an executive security narrative with CWE verification and zero hallucinations.
+- **Embedded Firmware & SquashFS Triage**: In-memory inspection and extraction of U-Boot legacy images (`uImage`) and SquashFS 4.0 filesystems with zero external utilities (`binwalk`, `unsquashfs`).
+- **Security Artifact & Credential Discovery**: Automated detection and classification of factory private keys, SSL/TLS certificates, shadow databases, and credential seeds (e.g. weak MD5-crypt `$1$` schemes).
+- **Sub-Target Deep-Dive Analysis**: Discovers embedded executables within firmware archives and automatically analyzes priority daemons and CGI binaries with full disassembly, p-code emulation, and capability mapping.
+- **Pure-Rust TLS & Zero External C Dependencies**: Full networking and AI completions are implemented with pure-Rust TLS and `#![forbid(unsafe_code)]`.
 
 <br>
 
 # Features
-- **One command.** `rea <file>` produces a Markdown and a typeset PDF report beside the target.
-- **Any file.** Format is detected from contents, not the extension.
-- **Formats.** PE (EXE/DLL/SYS), ELF, Mach-O and universal binaries, and raw ARM Cortex-M firmware.
-- **Architectures.** x86 and x86-64, plus every SLEIGH family: ARM/Thumb, AArch64, MIPS, PowerPC, RISC-V, SPARC, SuperH, AVR, 68000, MSP430, Xtensa, LoongArch — both endiannesses.
-- **Static analysis.** Hashes, import hash, entropy, sections, imports/exports, mitigations (ASLR, DEP/NX, CFG, PIE, RELRO, canaries), and capability classification.
-- **Disassembly.** Recursive-descent function and call-graph recovery with imports, strings, and functions resolved inline.
-- **Emulation.** A sandboxed, pure-software p-code emulator runs the target's own code with no native execution, and reports strings decrypted at runtime.
-- **Packing & protectors.** High entropy, writable-executable code, abnormal layouts, and named commercial protectors by their section signatures.
-- **Indicators.** URLs, IPs, emails, registry keys, file paths, commands, and user agents.
-- **Safe.** `#![forbid(unsafe_code)]` throughout; malformed or malicious inputs can never execute on the host or crash a report.
+
+- **One command.** `rea <file>` produces a GitHub-flavored Markdown report and an executive typeset PDF report beside the target.
+- **Any file.** Format is detected from contents, not the file extension.
+- **Autonomous AI Security Assessment.** When configured with an API key, REA runs an autonomous propose-review-adjudicate loop to generate an Executive Overview, Architecture Analysis, Evidence-Validated Vulnerabilities, and Actionable Recommendations.
+- **Deterministic Offline Fallback.** If no AI API key is configured, REA runs completely offline, generating comprehensive deterministic technical reports with zero network requests.
+- **Firmware & Filesystems.** U-Boot legacy images (`uImage`), SquashFS 4.0 root filesystems, embedded Linux partitions, and raw microcontroller firmware.
+- **Formats.** PE (EXE/DLL/SYS), ELF, Mach-O, universal binaries, firmware bundles, and raw ARM Cortex-M images.
+- **Architectures.** Native x86 and x86-64, plus every SLEIGH family: ARM/Thumb, AArch64, MIPS, PowerPC, RISC-V, SPARC, SuperH, AVR, 68000, MSP430, Xtensa, LoongArch — both endiannesses.
+- **Static Analysis.** Cryptographic hashes (MD5, SHA-1, SHA-256), import hashes (imphash), Shannon entropy, sections, memory layouts, imports, exports, and mitigations (ASLR, DEP/NX, CFG, PIE, RELRO, stack canaries).
+- **Disassembly.** Recursive-descent function and call-graph recovery with inline symbol and string resolution.
+- **P-Code Emulation.** Sandboxed software emulator executes target code without native host execution, unmasking runtime strings, keys, and decrypted payloads.
+- **Protectors & Packing.** High-entropy mapping, abnormal memory layouts, W^X violations, and signature matching for commercial protectors.
+- **Indicators.** Structured extraction of URLs, IPs, emails, registry keys, file paths, commands, and user agents.
+- **Strict Safety.** `#![forbid(unsafe_code)]` enforced across the entire codebase. Malformed or hostile inputs can never compromise the host.
+
+<br>
+
+# AI Analyst Configuration
+
+To enable the autonomous multi-agent analysis loop, provide an [OpenRouter](https://openrouter.ai) API key. REA automatically locates your key from environment variables or a `.env` file in the current or ancestor directories:
+
+```bash
+# In .env or shell environment:
+OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Optional model selection (defaults to high-throughput free tier):
+OPENROUTER_MODEL="nvidia/nemotron-3.5-lightning:free"
+```
+
+If no key is configured, REA operates in purely deterministic offline mode.
 
 <br>
 
 # Example Usage
-Pass REA the path to a binary. Reports are written beside the input as `re-<name>.md` and `re-<name>.pdf`.
+
+Pass REA the path to any binary or firmware target. Reports are generated beside the input as `re-<name>.md` and `re-<name>.pdf`.
 
 **Windows x64 (PowerShell)**
 ```powershell
-.\rea.exe .\sample.exe
+.\rea.exe .\sample
 ```
 
 **macOS Apple Silicon**
@@ -53,20 +86,24 @@ Pass REA the path to a binary. Reports are written beside the input as `re-<name
 <br>
 
 # Supported Targets
-| Format | Parsing | Disassembly |
+
+| Format | Parsing | Analysis & Triage |
 | --- | --- | --- |
-| PE (EXE, DLL, SYS) | Full | x86, x86-64 |
+| PE (EXE, DLL, SYS) | Full | x86, x86-64, imports, mitigations, imphash |
 | ELF (Linux, BSD, Android) | Full | x86/x86-64 + every SLEIGH architecture |
 | Mach-O and universal | Full | x86/x86-64 + every SLEIGH architecture |
-| Raw ARM Cortex-M firmware | Vector table, inferred flash base, handlers | ARM Thumb |
-| Any other file | Identity, hashes, entropy, strings, indicators | — |
+| U-Boot images (`uImage`) | Full | Kernel identification, compression, rootfs offsets |
+| SquashFS 4.0 Filesystems | In-memory | Unpacking, credential discovery, sub-target triage |
+| Raw ARM Cortex-M firmware | Vector table, flash base | ARM Thumb disassembly and handler mapping |
+| Any raw or unknown file | Identity, hashes, entropy | String extraction, indicators, entropy mapping |
 
-Non-x86 disassembly is driven by embedded [Ghidra](https://github.com/NationalSecurityAgency/ghidra) SLEIGH processor specifications compiled by a pure-Rust engine, so no Ghidra, Java, or external tools are needed.
+Non-x86 disassembly is powered by embedded SLEIGH processor specifications compiled directly by a pure-Rust engine. No Ghidra, Java, Python, or external command-line tools are required.
 
 <br>
 
 # Build from Source
-Install the [stable Rust toolchain](https://rustup.rs), clone the repository, and build on the target operating system. Windows builds require the Visual Studio C++ Build Tools.
+
+Install the [stable Rust toolchain](https://rustup.rs), clone the repository, and build on your operating system:
 
 ```bash
 git clone https://github.com/mytechnotalent/rea.git
@@ -98,23 +135,24 @@ cargo build --release -p rea --target x86_64-unknown-linux-gnu
 Output: `target/x86_64-unknown-linux-gnu/release/rea`
 
 Install a native build on your `PATH` with:
-
 ```bash
 cargo install --path crates/rea
 ```
 
-Prebuilt binaries are in [`releases/`](releases).
+Prebuilt binaries for macOS Apple Silicon (`aarch64-apple-darwin`) are located in [`releases/`](releases). To build for Windows or Linux, follow the cross-compilation and native build commands above.
 
 <br>
 
-# Verify
+# Quality & Verification
+
 ```bash
 cargo xtask check
 ```
 
-Enforces the coding standard, then runs `cargo fmt --check`, `cargo clippy` with every warning denied, and the full test suite.
+Enforces strict zero-violation coding standards (`CONVENTIONS.md`), runs `cargo fmt --check`, denies all Clippy warnings (`cargo clippy --workspace --all-targets -- -D warnings`), and executes the complete workspace test suite.
 
 <br>
 
 # License
+
 [MIT License](LICENSE)

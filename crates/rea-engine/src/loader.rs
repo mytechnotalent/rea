@@ -27,7 +27,16 @@
 //! SOFTWARE.
 
 // Import crate items
-use crate::{detect::Format, elf, error::EngineError, firmware, macho, model::Binary, pe};
+use crate::{detect::Format, elf, error::EngineError, firmware, macho, model::Binary, pe, uimage};
+
+/// Dispatches raw or container firmware loaders.
+fn load_firmware(bytes: &[u8], format: Format) -> Option<Result<Binary, EngineError>> {
+    match format {
+        Format::CortexM => Some(firmware::parse(bytes)),
+        Format::UImage => Some(uimage::parse(bytes)),
+        _ => None,
+    }
+}
 
 /// Parses a native executable with the loader for its format.
 ///
@@ -48,8 +57,7 @@ pub fn load(bytes: &[u8], format: Format) -> Option<Result<Binary, EngineError>>
         Format::Pe => Some(pe::parse(bytes)),
         Format::Elf => Some(elf::parse(bytes)),
         Format::MachO | Format::MachOUniversal => Some(macho::parse(bytes)),
-        Format::CortexM => Some(firmware::parse(bytes)),
-        _ => None,
+        _ => load_firmware(bytes, format),
     }
 }
 
@@ -68,5 +76,11 @@ mod tests {
     #[test]
     fn test_load_reports_malformed() {
         assert!(matches!(load(b"MZ", Format::Pe), Some(Err(_))));
+    }
+
+    /// Verifies that uimage format dispatches to the uimage loader.
+    #[test]
+    fn test_load_dispatches_uimage() {
+        assert!(load(b"too short", Format::UImage).is_some());
     }
 }

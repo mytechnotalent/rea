@@ -59,13 +59,19 @@ pub enum Format {
     /// Raw ARM Cortex-M firmware image (headerless, vector table at offset 0).
     CortexM,
 
+    /// U-Boot legacy image container.
+    UImage,
+
+    /// `SquashFS` filesystem.
+    Squashfs,
+
     /// Unrecognized content.
     #[default]
     Unknown,
 }
 
 /// Leading-byte signatures checked in order.
-const SIGNATURES: [(&[u8], Format); 11] = [
+const SIGNATURES: [(&[u8], Format); 14] = [
     (b"MZ", Format::Pe),
     (b"\x7fELF", Format::Elf),
     (&[0xfe, 0xed, 0xfa, 0xce], Format::MachO),
@@ -77,10 +83,13 @@ const SIGNATURES: [(&[u8], Format); 11] = [
     (b"dex\n", Format::Dex),
     (b"#!", Format::Script),
     (b"%PDF", Format::Pdf),
+    (&[0x27, 0x05, 0x19, 0x56], Format::UImage),
+    (b"hsqs", Format::Squashfs),
+    (b"sqsh", Format::Squashfs),
 ];
 
 /// Human-readable format names.
-const LABELS: [(Format, &str); 11] = [
+const LABELS: [(Format, &str); 13] = [
     (Format::Pe, "Portable Executable (PE)"),
     (Format::Elf, "Executable and Linkable Format (ELF)"),
     (Format::MachO, "Mach-O"),
@@ -91,6 +100,8 @@ const LABELS: [(Format, &str); 11] = [
     (Format::Script, "Script"),
     (Format::Pdf, "PDF document"),
     (Format::CortexM, "Raw ARM Cortex-M firmware"),
+    (Format::UImage, "U-Boot legacy image (uImage)"),
+    (Format::Squashfs, "SquashFS filesystem"),
     (Format::Unknown, "Unrecognized data"),
 ];
 
@@ -116,14 +127,8 @@ impl Format {
     /// `true` for PE, ELF, and Mach-O.
     #[must_use]
     pub fn is_native(self) -> bool {
-        let native = [
-            Self::Pe,
-            Self::Elf,
-            Self::MachO,
-            Self::MachOUniversal,
-            Self::CortexM,
-        ];
-        native.contains(&self)
+        let all = [Self::Pe, Self::Elf, Self::MachO, Self::MachOUniversal];
+        all.contains(&self) || self == Self::CortexM || self == Self::UImage
     }
 }
 
@@ -257,6 +262,14 @@ mod tests {
         assert_eq!(detect(b"MZ\x90\x00"), Format::Pe);
         assert_eq!(detect(b"\x7fELF\x02"), Format::Elf);
         assert_eq!(detect(&[0xcf, 0xfa, 0xed, 0xfe]), Format::MachO);
+    }
+
+    /// Verifies detection of `uImage` and `SquashFS` container signatures.
+    #[test]
+    fn test_detect_containers() {
+        assert_eq!(detect(&[0x27, 0x05, 0x19, 0x56, 0, 0]), Format::UImage);
+        assert_eq!(detect(b"hsqs\x00\x00"), Format::Squashfs);
+        assert_eq!(detect(b"sqsh\x00\x00"), Format::Squashfs);
     }
 
     /// Verifies that `0xCAFEBABE` is split between Mach-O and Java.

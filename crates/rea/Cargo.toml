@@ -15,3 +15,6 @@ path = "src/main.rs"
 [dependencies]
 rea-engine.workspace = true
 rea-report.workspace = true
+ureq = { version = "3.4.2", features = ["json"] }
+serde_json = "1.0"
+

@@ -31,6 +31,9 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 
+/// Autonomous AI analyst loop.
+pub mod agent;
+
 /// Command-line entry point and argument handling.
 pub mod cli;
 

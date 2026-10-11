@@ -45,6 +45,7 @@ use crate::{
     multiarch,
     numeric::to_u64,
     packer::{self, Assessment},
+    squashfs::{self, FirmwareTriage},
     strings::{self, FoundString},
 };
 
@@ -104,6 +105,9 @@ pub struct Analysis {
 
     /// Entry-point emulation outcome, when a binary was parsed.
     pub emulation: Option<Emulation>,
+
+    /// Firmware root filesystem triage, when a `SquashFS` container was unpacked.
+    pub firmware: Option<FirmwareTriage>,
 }
 
 /// Reads and analyzes a target file.
@@ -160,6 +164,7 @@ pub fn analyze(name: &str, bytes: &[u8]) -> Analysis {
     analysis.strings = strings::extract(bytes);
     analysis.indicators = iocs::scan(&analysis.strings);
     analysis.assess();
+    analysis.triage_firmware(bytes);
     analysis.study(bytes);
     analysis
 }
@@ -239,6 +244,20 @@ impl Analysis {
         let imports = self.binary.as_ref().map_or(&[][..], |b| b.imports.as_slice());
         self.capabilities = capabilities::classify(imports);
         self.packing = packer::assess(self.binary.as_ref(), self.entropy);
+    }
+
+    /// Performs firmware filesystem triage if a `SquashFS` rootfs is present.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - Target contents.
+    fn triage_firmware(&mut self, bytes: &[u8]) {
+        if self.format == Format::Squashfs {
+            self.firmware = squashfs::triage(bytes);
+        } else if let Some(binary) = &self.binary {
+            let rootfs = binary.sections.iter().find(|s| s.name == "rootfs_squashfs");
+            self.firmware = rootfs.and_then(|s| squashfs::triage(s.data(bytes)));
+        }
     }
 }
 

@@ -1,4 +1,7 @@
 /target
+/analysis
 .env
+.env.*
+!.env.example
 re-*.md
 re-*.pdf

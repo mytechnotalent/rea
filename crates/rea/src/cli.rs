@@ -178,6 +178,22 @@ fn fail(error: &CliError) -> ExitCode {
     ExitCode::FAILURE
 }
 
+/// Writes both report files to disk.
+///
+/// # Arguments
+///
+/// * `paths` - Report paths.
+/// * `md` - Markdown bytes.
+/// * `pdf` - PDF bytes.
+///
+/// # Errors
+///
+/// Returns [`CliError::Write`] when a file cannot be written.
+fn write_reports(paths: &ReportPaths, md: &[u8], pdf: &[u8]) -> Result<(), CliError> {
+    write(&paths.markdown, md)?;
+    write(&paths.pdf, pdf)
+}
+
 /// Analyzes a target and writes both reports beside it.
 ///
 /// # Arguments
@@ -195,10 +211,10 @@ pub fn run(target: &Path) -> Result<ReportPaths, CliError> {
     reject_directory(target)?;
     eprintln!("rea: reverse engineering {}", target.display());
     let analysis = analyze_path(target).map_err(CliError::Engine)?;
-    let (markdown, pdf) = render(&compose::build(&analysis))?;
+    let assessment = crate::agent::evaluate(&analysis);
+    let (markdown, pdf) = render(&compose::build(&analysis, assessment.as_deref()))?;
     let paths = report_paths(target);
-    write(&paths.markdown, markdown.as_bytes())?;
-    write(&paths.pdf, &pdf)?;
+    write_reports(&paths, markdown.as_bytes(), &pdf)?;
     Ok(paths)
 }
 

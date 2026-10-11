@@ -46,11 +46,16 @@ const STACK_GAP: u64 = 0x0010_0000;
 const MAX_IMAGE: u64 = 16 << 20;
 
 /// Stack registers for architectures that do not name theirs `sp`.
-const STACK_REGS: [(Arch, &str); 4] = [
+const STACK_REGS: [(Arch, &str); 9] = [
     (Arch::X86, "ESP"),
     (Arch::X86_64, "RSP"),
     (Arch::PowerPc, "r1"),
     (Arch::PowerPc64, "r1"),
+    (Arch::SuperH, "r15"),
+    (Arch::Xtensa, "a1"),
+    (Arch::Avr, "SP"),
+    (Arch::Msp430, "SP"),
+    (Arch::M68k, "SP"),
 ];
 
 /// Why an emulation run stopped.

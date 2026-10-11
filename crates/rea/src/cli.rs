@@ -42,15 +42,21 @@ use crate::{
 };
 
 /// Help text shown for `--help` and usage errors.
-const USAGE: &str = "Reverse Engineering Assistant
+const USAGE: &str = "Reverse Engineering Assistant (REA)
 
-usage: rea <file>
-
-Reverse engineers <file> and writes re-<name>.md and re-<name>.pdf beside it.
+usage:
+  rea <file>                  one-shot nation-state analysis and dossier generation
+  rea serve | rea mcp         start Model Context Protocol (MCP) server over stdio
+  rea mcp --config            print MCP config for Claude, Cursor, Windsurf, Gemini, OpenCode
+  rea info <file>             inspect file headers, hashes, mitigations, and sections
+  rea strings <file>          extract printable strings and security indicators
+  rea decompile <file> [sym]  decompile target or function into pseudo-C
+  rea xrefs <file> <addr>     query cross-references to address or symbol
+  rea analyze <file>          alias for one-shot analysis
 
 options:
-  -h, --help     show this help
-  -V, --version  show the version";
+  -h, --help                  show this help
+  -V, --version               show the version";
 
 /// Exit status for command-line usage errors.
 const USAGE_ERROR: u8 = 2;
@@ -91,6 +97,32 @@ impl fmt::Display for CliError {
     }
 }
 
+/// Checks if flag is a help request.
+///
+/// # Arguments
+///
+/// * `f` - Argument flag string.
+///
+/// # Returns
+///
+/// `true` if `-h` or `--help`.
+fn is_help(f: &str) -> bool {
+    f == "-h" || f == "--help"
+}
+
+/// Checks if flag is a version request.
+///
+/// # Arguments
+///
+/// * `f` - Argument flag string.
+///
+/// # Returns
+///
+/// `true` if `-V` or `--version`.
+fn is_version(f: &str) -> bool {
+    f == "-V" || f == "--version"
+}
+
 /// Runs the command line.
 ///
 /// # Arguments
@@ -103,10 +135,172 @@ impl fmt::Display for CliError {
 #[must_use]
 pub fn main(args: &[String]) -> ExitCode {
     match args {
-        [flag] if flag == "-h" || flag == "--help" => print(USAGE),
-        [flag] if flag == "-V" || flag == "--version" => print(&version()),
-        [target] => finish(run(Path::new(target))),
+        [flag] if is_help(flag) => print(USAGE),
+        [flag] if is_version(flag) => print(&version()),
+        [cmd, rest @ ..] => dispatch_subcommand(cmd, rest),
         _ => usage_error(),
+    }
+}
+
+/// Dispatches interactive inspection commands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Exit code if matched, otherwise `None`.
+fn dispatch_inspect(cmd: &str, rest: &[String]) -> Option<ExitCode> {
+    match cmd {
+        "info" => Some(dispatch_info(rest)),
+        "strings" => Some(dispatch_strings(rest)),
+        "decompile" => Some(dispatch_decompile(rest)),
+        "xrefs" => Some(dispatch_xrefs(rest)),
+        _ => None,
+    }
+}
+
+/// Dispatches named service or target subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Command execution exit code.
+fn dispatch_named(cmd: &str, rest: &[String]) -> ExitCode {
+    match cmd {
+        "serve" => crate::mcp::serve_cmd(),
+        "mcp" => dispatch_mcp(rest),
+        "analyze" => dispatch_analyze(rest),
+        _ => dispatch_target(cmd, rest),
+    }
+}
+
+/// Dispatches subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Command execution exit code.
+fn dispatch_subcommand(cmd: &str, rest: &[String]) -> ExitCode {
+    dispatch_inspect(cmd, rest).unwrap_or_else(|| dispatch_named(cmd, rest))
+}
+
+/// Dispatches mcp server or config subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_mcp(rest: &[String]) -> ExitCode {
+    if rest.first().is_some_and(|f| f == "--config") {
+        crate::mcp::config_cmd()
+    } else {
+        crate::mcp::serve_cmd()
+    }
+}
+
+/// Dispatches info subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_info(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::info_cmd(Path::new(t)))
+}
+
+/// Dispatches strings subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_strings(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::strings_cmd(Path::new(t)))
+}
+
+/// Dispatches decompile subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_decompile(rest: &[String]) -> ExitCode {
+    match rest {
+        [target] => crate::inspect::decompile_cmd(Path::new(target), None),
+        [target, sym] => crate::inspect::decompile_cmd(Path::new(target), Some(sym)),
+        _ => usage_error(),
+    }
+}
+
+/// Dispatches xrefs subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_xrefs(rest: &[String]) -> ExitCode {
+    match rest {
+        [target, addr] => crate::inspect::xrefs_cmd(Path::new(target), addr),
+        _ => usage_error(),
+    }
+}
+
+/// Dispatches analyze subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_analyze(rest: &[String]) -> ExitCode {
+    rest.first().map_or_else(usage_error, |t| finish(run(Path::new(t))))
+}
+
+/// Dispatches direct target file invocation.
+///
+/// # Arguments
+///
+/// * `target` - Target file path string.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_target(target: &str, rest: &[String]) -> ExitCode {
+    if rest.is_empty() {
+        finish(run(Path::new(target)))
+    } else {
+        usage_error()
     }
 }
 
@@ -170,14 +364,25 @@ fn finish(result: Result<ReportPaths, CliError>) -> ExitCode {
 ///
 /// Exit code success.
 fn print_paths(p: &ReportPaths) -> ExitCode {
-    let msg = format!(
-        "{}\n{}\n{}\n{}",
-        p.markdown.display(),
-        p.pdf.display(),
-        p.analysis_pdf.display(),
-        p.record_pdf.display()
-    );
-    print(&msg)
+    let mut out = vec![
+        p.markdown.display().to_string(),
+        p.pdf.display().to_string(),
+    ];
+    append_existing_pdf(&mut out, &p.analysis_pdf);
+    append_existing_pdf(&mut out, &p.record_pdf);
+    print(&out.join("\n"))
+}
+
+/// Appends a PDF path if it exists on disk.
+///
+/// # Arguments
+///
+/// * `out` - Destination list.
+/// * `p` - Path to check.
+fn append_existing_pdf(out: &mut Vec<String>, p: &std::path::Path) {
+    if p.exists() {
+        out.push(p.display().to_string());
+    }
 }
 
 /// Prints a failure and reports it.
@@ -200,6 +405,10 @@ fn fail(error: &CliError) -> ExitCode {
 ///
 /// * `doc` - Composed report document.
 ///
+/// # Returns
+///
+/// Tuple of markdown bytes and compiled PDF bytes.
+///
 /// # Errors
 ///
 /// Returns [`CliError::Report`] when typesetting fails.
@@ -216,6 +425,10 @@ fn render_pair(doc: &Document) -> Result<(Vec<u8>, Vec<u8>), CliError> {
 /// * `pdf_path` - PDF destination.
 /// * `doc` - Composed report document.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError`] on failure.
@@ -231,6 +444,10 @@ fn write_doc_pair(md_path: &Path, pdf_path: &Path, doc: &Document) -> Result<(),
 ///
 /// * `paths` - Output paths.
 /// * `analysis` - Analysis results.
+///
+/// # Returns
+///
+/// Unit when successful.
 ///
 /// # Errors
 ///
@@ -250,6 +467,10 @@ fn write_dossier_doc(paths: &ReportPaths, analysis: &Analysis) -> Result<(), Cli
 /// * `paths` - Output paths.
 /// * `analysis` - Analysis results.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError`] on failure.
@@ -268,6 +489,10 @@ fn write_record_doc(paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliE
 /// * `paths` - Output paths.
 /// * `analysis` - Analysis results.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError`] on failure.
@@ -276,7 +501,7 @@ fn write_aux_docs(paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliErr
     write_record_doc(paths, analysis)
 }
 
-/// Writes all three report documents to disk.
+/// Writes primary report document pair to disk.
 ///
 /// # Arguments
 ///
@@ -284,20 +509,20 @@ fn write_aux_docs(paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliErr
 /// * `analysis` - Analysis results.
 /// * `assess` - AI narrative assessment.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError`] on failure.
-fn write_all_docs(
+fn write_primary_doc(
     paths: &ReportPaths,
     analysis: &Analysis,
     assess: Option<&str>,
 ) -> Result<(), CliError> {
-    write_doc_pair(
-        &paths.markdown,
-        &paths.pdf,
-        &compose::build(analysis, assess),
-    )?;
-    write_aux_docs(paths, analysis)
+    let doc = compose::build(analysis, assess);
+    write_doc_pair(&paths.markdown, &paths.pdf, &doc)
 }
 
 /// Executes document generation and writes all accompanying artifacts.
@@ -308,12 +533,20 @@ fn write_all_docs(
 /// * `paths` - Output paths.
 /// * `analysis` - Analysis result.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError`] on write failure.
 fn emit_reports(target: &Path, paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliError> {
-    write_all_docs(paths, analysis, crate::agent::evaluate(analysis).as_deref())?;
-    crate::artifacts::write_all(target, analysis)
+    write_primary_doc(paths, analysis, crate::agent::evaluate(analysis).as_deref())?;
+    if analysis.firmware.is_some() {
+        write_aux_docs(paths, analysis)?;
+        crate::artifacts::write_all(target, analysis)?;
+    }
+    Ok(())
 }
 
 /// Analyzes a target and writes all reports and artifacts beside it.
@@ -343,6 +576,10 @@ pub fn run(target: &Path) -> Result<ReportPaths, CliError> {
 /// # Arguments
 ///
 /// * `target` - Requested target.
+///
+/// # Returns
+///
+/// Unit when target is not a directory.
 ///
 /// # Errors
 ///
@@ -380,6 +617,10 @@ fn render(document: &Document) -> Result<(String, Vec<u8>), CliError> {
 ///
 /// * `path` - Destination.
 /// * `bytes` - File contents.
+///
+/// # Returns
+///
+/// Unit when successful.
 ///
 /// # Errors
 ///

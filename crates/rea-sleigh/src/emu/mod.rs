@@ -252,6 +252,10 @@ impl Emulator {
     /// * `name` - Register name in the specification.
     /// * `value` - Value to store.
     ///
+    /// # Returns
+    ///
+    /// Unit when successful.
+    ///
     /// # Errors
     ///
     /// Returns [`EmuError::MissingRegister`] when the name is unknown.

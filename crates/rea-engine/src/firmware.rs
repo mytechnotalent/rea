@@ -74,7 +74,7 @@ const EXCEPTIONS: [&str; 14] = [
 pub fn parse(bytes: &[u8]) -> Result<Binary, EngineError> {
     let reset = reset_vector(bytes)?;
     let base = u64::from(reset & 0xFFF0_0000);
-    let mut binary = identity(base, reset);
+    let mut binary = identity(base, reset, bytes);
     binary.sections = vec![flash(base, bytes)];
     binary.symbols = handlers(bytes, base);
     binary.function_starts = discovered_starts(bytes, base, &binary.symbols);
@@ -155,22 +155,141 @@ fn prologue_scan(bytes: &[u8], base: u64) -> Vec<u64> {
     prologues.map(|(offset, _)| base + to_u64(offset)).collect()
 }
 
+/// Reports whether bytes contain Raspberry Pi Picobin marker words.
+///
+/// # Arguments
+///
+/// * `chunk` - Four-byte word slice.
+///
+/// # Returns
+///
+/// `true` when matching either Picobin marker.
+fn is_picobin_word(chunk: [u8; 4]) -> bool {
+    let val = u32::from_le_bytes(chunk);
+    val == 0xffff_ded3 || val == 0xab12_3579
+}
+
+/// Checks the initial header region for Raspberry Pi Picobin metadata.
+///
+/// # Arguments
+///
+/// * `bytes` - Target firmware image.
+///
+/// # Returns
+///
+/// `true` when a Picobin marker word is present in the first 4 KiB.
+fn has_picobin(bytes: &[u8]) -> bool {
+    let limit = bytes.len().min(4096);
+    bytes[..limit].as_chunks::<4>().0.iter().copied().any(is_picobin_word)
+}
+
+/// Reports whether target describes a Raspberry Pi RP2350 microcontroller.
+///
+/// # Arguments
+///
+/// * `bytes` - Target firmware image.
+/// * `base` - Inferred flash base address.
+/// * `sp` - Initial stack pointer word.
+///
+/// # Returns
+///
+/// `true` when memory layout or Picobin metadata identifies an RP2350.
+fn is_rp2350(bytes: &[u8], base: u64, sp: u32) -> bool {
+    (base == 0x1000_0000 && sp == 0x2008_2000) || has_picobin(bytes)
+}
+
+/// Reports whether target describes a Raspberry Pi RP2040 microcontroller.
+///
+/// # Arguments
+///
+/// * `base` - Inferred flash base address.
+/// * `sp` - Initial stack pointer word.
+///
+/// # Returns
+///
+/// `true` when flash base and stack pointer match an RP2040.
+fn is_rp2040(base: u64, sp: u32) -> bool {
+    base == 0x1000_0000 && (sp == 0x2004_0000 || sp == 0x2004_2000)
+}
+
+/// Returns RP2350 architecture and kind strings.
+///
+/// # Returns
+///
+/// A pair containing the architecture name and firmware kind.
+fn rp2350_profile() -> (&'static str, &'static str) {
+    (
+        "ARM Cortex-M33 (RP2350 / Thumb-2)",
+        "Raspberry Pi RP2350 firmware",
+    )
+}
+
+/// Returns RP2040 architecture and kind strings.
+///
+/// # Returns
+///
+/// A pair containing the architecture name and firmware kind.
+fn rp2040_profile() -> (&'static str, &'static str) {
+    (
+        "ARM Cortex-M0+ (RP2040 / Thumb)",
+        "Raspberry Pi RP2040 firmware",
+    )
+}
+
+/// Resolves RP-family architecture and kind if recognized.
+///
+/// # Arguments
+///
+/// * `bytes` - Target firmware image.
+/// * `base` - Inferred flash base address.
+/// * `sp` - Initial stack pointer word.
+///
+/// # Returns
+///
+/// The architecture profile if recognized, otherwise `None`.
+fn rp_profile(bytes: &[u8], base: u64, sp: u32) -> Option<(&'static str, &'static str)> {
+    if is_rp2350(bytes, base, sp) {
+        Some(rp2350_profile())
+    } else if is_rp2040(base, sp) {
+        Some(rp2040_profile())
+    } else {
+        None
+    }
+}
+
+/// Chooses architecture and image description based on detected chip.
+///
+/// # Arguments
+///
+/// * `bytes` - Target firmware image.
+/// * `base` - Inferred flash base address.
+///
+/// # Returns
+///
+/// The architecture label and firmware description string.
+fn chip_profile(bytes: &[u8], base: u64) -> (&'static str, &'static str) {
+    let sp = word(bytes, 0).unwrap_or(0);
+    rp_profile(bytes, base, sp).unwrap_or(("ARM Cortex-M (Thumb)", "Bare-metal firmware image"))
+}
+
 /// Builds the identity fields for a firmware image.
 ///
 /// # Arguments
 ///
 /// * `base` - Inferred flash base address.
 /// * `reset` - Raw reset-vector word.
+/// * `bytes` - Whole firmware image.
 ///
 /// # Returns
 ///
 /// A 32-bit Thumb ARM binary.
-fn identity(base: u64, reset: u32) -> Binary {
-    let mut binary = Binary::new(Format::CortexM, Arch::Arm, "ARM Cortex-M (Thumb)", 32);
+fn identity(base: u64, reset: u32, bytes: &[u8]) -> Binary {
+    let (arch_name, kind) = chip_profile(bytes, base);
+    let mut binary = Binary::new(Format::CortexM, Arch::Arm, arch_name, 32);
     binary.thumb = true;
     binary.image_base = base;
     binary.entry = u64::from(reset & !1);
-    binary.kind = "Bare-metal firmware image".to_string();
+    binary.kind = kind.to_string();
     binary
 }
 
@@ -258,6 +377,93 @@ fn handler_name(index: usize) -> String {
     }
 }
 
+/// Returns RP2350 identity facts.
+///
+/// # Returns
+///
+/// Microcontroller and platform facts for RP2350.
+fn rp2350_identity_facts() -> Vec<Fact> {
+    let mc = Fact::new("Microcontroller", "Raspberry Pi RP2350 (ARM Cortex-M33)");
+    let pl = Fact::new("Platform", "Raspberry Pi Pico 2");
+    vec![mc, pl]
+}
+
+/// Returns RP2350 memory facts.
+///
+/// # Returns
+///
+/// SRAM capacity and boot metadata facts.
+fn rp2350_memory_facts() -> Vec<Fact> {
+    let sr = Fact::new("SRAM capacity", "520 KiB (0x20000000 - 0x20082000)");
+    let bt = Fact::new(
+        "Boot metadata",
+        "Raspberry Pi Picobin (IMAGE_DEF 0xffffded3)",
+    );
+    vec![sr, bt]
+}
+
+/// Returns all RP2350 microcontroller facts.
+///
+/// # Returns
+///
+/// Full set of RP2350 identity and hardware facts.
+fn rp2350_facts() -> Vec<Fact> {
+    let mut list = rp2350_identity_facts();
+    list.extend(rp2350_memory_facts());
+    list
+}
+
+/// Returns RP2040 microcontroller facts.
+///
+/// # Returns
+///
+/// Full set of RP2040 identity and hardware facts.
+fn rp2040_facts() -> Vec<Fact> {
+    let mc = Fact::new("Microcontroller", "Raspberry Pi RP2040 (ARM Cortex-M0+)");
+    let pl = Fact::new("Platform", "Raspberry Pi Pico");
+    let sr = Fact::new("SRAM capacity", "264 KiB (0x20000000 - 0x20042000)");
+    vec![mc, pl, sr]
+}
+
+/// Discovers platform-specific hardware facts.
+///
+/// # Arguments
+///
+/// * `bytes` - Whole firmware image.
+/// * `base` - Inferred flash base address.
+/// * `sp` - Initial stack pointer word.
+///
+/// # Returns
+///
+/// Discovered microcontroller hardware facts, or an empty list if unknown.
+fn rp_facts(bytes: &[u8], base: u64, sp: u32) -> Vec<Fact> {
+    if is_rp2350(bytes, base, sp) {
+        rp2350_facts()
+    } else if is_rp2040(base, sp) {
+        rp2040_facts()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Builds base metadata facts for a firmware image.
+///
+/// # Arguments
+///
+/// * `base` - Inferred flash base address.
+/// * `sp` - Initial stack pointer.
+/// * `count` - Handler count in vector table.
+///
+/// # Returns
+///
+/// Base hardware facts describing memory layout and handlers.
+fn base_facts(base: u64, sp: u32, count: usize) -> Vec<Fact> {
+    let f1 = Fact::new("Inferred flash base", format!("0x{base:08x}"));
+    let f2 = Fact::new("Initial stack pointer", format!("0x{sp:08x}"));
+    let f3 = Fact::new("Vector-table handlers", count.to_string());
+    vec![f1, f2, f3]
+}
+
 /// Builds metadata facts for a firmware image.
 ///
 /// # Arguments
@@ -271,11 +477,9 @@ fn handler_name(index: usize) -> String {
 fn facts(bytes: &[u8], base: u64) -> Vec<Fact> {
     let sp = word(bytes, 0).unwrap_or(0);
     let count = handlers(bytes, base).len();
-    vec![
-        Fact::new("Inferred flash base", format!("0x{base:08x}")),
-        Fact::new("Initial stack pointer", format!("0x{sp:08x}")),
-        Fact::new("Vector-table handlers", count.to_string()),
-    ]
+    let mut list = base_facts(base, sp, count);
+    list.extend(rp_facts(bytes, base, sp));
+    list
 }
 
 /// Reads a little-endian 32-bit word.
@@ -315,6 +519,7 @@ mod tests {
         let binary = parse(&image()).unwrap();
         assert_eq!(binary.image_base, 0x1000_0000);
         assert_eq!(binary.entry, 0x1000_0100);
+        assert_eq!(binary.arch_name, "ARM Cortex-M33 (RP2350 / Thumb-2)");
         assert!(binary.symbols.iter().any(|s| s.name == "Reset_Handler"));
     }
 

@@ -32,7 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 // Import crate items
 use crate::{
     detect::Format,
-    model::Binary,
+    model::{Arch, Binary},
     numeric::{to_u64, to_usize},
 };
 
@@ -49,6 +49,34 @@ pub const MAX_FUNCTIONS: usize = 100_000;
 
 /// Largest body, in instructions, of a function treated as an import thunk.
 const THUNK_SIZE: usize = 2;
+
+/// An analyzed instruction with disassembly and semantic discussion.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct InstructionLine {
+    /// Virtual memory address of the instruction.
+    pub address: u64,
+    /// Disassembled instruction mnemonic and operands.
+    pub text: String,
+    /// Functional category of the instruction.
+    pub kind: String,
+    /// Detailed analysis and discussion of the instruction operation.
+    pub discussion: String,
+}
+
+/// An analyzed data entry or literal pool embedded in an executable region.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DataEntry {
+    /// Virtual memory address of the data.
+    pub address: u64,
+    /// Raw byte sequence formatted as hex.
+    pub bytes_hex: String,
+    /// Representation when interpreted as data.
+    pub as_data: String,
+    /// Representation when disassembled as candidate instructions.
+    pub as_code: Option<String>,
+    /// Security and contextual discussion of this data block.
+    pub discussion: String,
+}
 
 /// A function recovered by recursive descent.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -70,6 +98,12 @@ pub struct Function {
 
     /// Addresses referenced by memory operands and immediates.
     pub references: BTreeSet<u64>,
+
+    /// Analyzed assembly instruction sequence.
+    pub lines: Vec<InstructionLine>,
+
+    /// Embedded literal pools and data blocks accessed by this function.
+    pub data_pools: Vec<DataEntry>,
 }
 
 /// The program's recovered code structure.
@@ -497,6 +531,8 @@ impl<'a> Walker<'a> {
         while let Some(block) = trace.blocks.pop() {
             self.trace_block(block, &mut trace);
         }
+        trace.function.lines.sort_by_key(|l| l.address);
+        trace.function.lines.dedup_by_key(|l| l.address);
         trace.function
     }
 
@@ -530,9 +566,22 @@ impl<'a> Walker<'a> {
         let room = self.result.instructions < MAX_INSTRUCTIONS;
         self.result.truncated |= !room;
         let fresh = room && !instruction.is_invalid() && trace.seen.insert(instruction.ip());
-        self.result.instructions += usize::from(fresh);
-        trace.function.instructions += usize::from(fresh);
+        if fresh {
+            self.record_line(instruction, trace);
+        }
         fresh
+    }
+
+    /// Records a disassembled line into trace state.
+    ///
+    /// # Arguments
+    ///
+    /// * `instruction` - Decoded instruction.
+    /// * `trace` - Function tracing state.
+    fn record_line(&mut self, instruction: &Instruction, trace: &mut Trace) {
+        self.result.instructions += 1;
+        trace.function.instructions += 1;
+        trace.function.lines.push(make_instruction_line(instruction));
     }
 
     /// Follows control flow and records references for one instruction.
@@ -635,6 +684,21 @@ fn inherit(function: &mut Function, thunks: &HashMap<u64, String>) {
         let thunk = thunks.get(&function.address);
         function.name = thunk.map(|name| format!("j_{name}"));
     }
+}
+
+/// Builds an instruction line with semantic classification and discussion.
+///
+/// # Arguments
+///
+/// * `instruction` - Decoded instruction.
+///
+/// # Returns
+///
+/// Constructed instruction line.
+fn make_instruction_line(instruction: &Instruction) -> InstructionLine {
+    let (ip, text) = (instruction.ip(), format!("{instruction}"));
+    let (kind, discussion) = crate::semantics::discuss(Arch::X86_64, ip, &text);
+    InstructionLine { address: ip, text, kind, discussion }
 }
 
 #[cfg(test)]

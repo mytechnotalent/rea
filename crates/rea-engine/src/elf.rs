@@ -139,7 +139,7 @@ fn arch(machine: u16, is_64: bool) -> Arch {
 type ArchPick = fn(bool) -> Arch;
 
 /// ELF machine identifiers mapped to an architecture selector.
-const ELF_ARCHES: [(u16, ArchPick); 13] = [
+const ELF_ARCHES: [(u16, ArchPick); 16] = [
     (header::EM_386, |_| Arch::X86),
     (header::EM_X86_64, |_| Arch::X86_64),
     (header::EM_ARM, |_| Arch::Arm),
@@ -162,6 +162,9 @@ const ELF_ARCHES: [(u16, ArchPick); 13] = [
     (header::EM_SH, |_| Arch::SuperH),
     (header::EM_AVR, |_| Arch::Avr),
     (header::EM_68K, |_| Arch::M68k),
+    (header::EM_MSP430, |_| Arch::Msp430),
+    (header::EM_XTENSA, |_| Arch::Xtensa),
+    (header::EM_LOONGARCH, |_| Arch::LoongArch),
 ];
 
 /// Describes the object type.

@@ -198,6 +198,10 @@ impl World for ReportWorld {
     ///
     /// * `id` - Requested file.
     ///
+    /// # Returns
+    ///
+    /// The document source when matching.
+    ///
     /// # Errors
     ///
     /// Returns [`FileError::NotFound`] for any other file.
@@ -211,6 +215,10 @@ impl World for ReportWorld {
     /// # Arguments
     ///
     /// * `_id` - Requested file.
+    ///
+    /// # Returns
+    ///
+    /// Error indicating access is denied.
     ///
     /// # Errors
     ///

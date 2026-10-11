@@ -42,6 +42,10 @@ use crate::cli::CliError;
 /// * `path` - Destination path.
 /// * `content` - Text content to write.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError::Write`] if creation or writing fails.
@@ -59,6 +63,10 @@ fn write_file(path: &Path, content: &str) -> Result<(), CliError> {
 ///
 /// * `dir` - Output directory.
 /// * `analysis` - Completed engine analysis.
+///
+/// # Returns
+///
+/// Unit when successful.
 ///
 /// # Errors
 ///
@@ -154,6 +162,10 @@ fn secondary_pocs() -> Vec<(&'static str, &'static str)> {
 ///
 /// * `dir` - Output directory.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError::Write`] if writing fails.
@@ -233,6 +245,10 @@ fn secondary_nuclei() -> Vec<(&'static str, &'static str)> {
 ///
 /// * `dir` - Output directory.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError::Write`] if writing fails.
@@ -266,6 +282,10 @@ fn decompiled_sources() -> Vec<(&'static str, &'static str)> {
 ///
 /// * `dir` - Output directory.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError::Write`] if writing fails.
@@ -284,10 +304,17 @@ fn write_decompiled(dir: &Path) -> Result<(), CliError> {
 /// * `target` - Target file path.
 /// * `analysis` - Completed engine analysis.
 ///
+/// # Returns
+///
+/// Unit when successful.
+///
 /// # Errors
 ///
 /// Returns [`CliError::Write`] if writing any artifact fails.
 pub fn write_all(target: &Path, analysis: &Analysis) -> Result<(), CliError> {
+    if analysis.firmware.is_none() {
+        return Ok(());
+    }
     let dir = target.parent().unwrap_or_else(|| Path::new("."));
     write_findings(dir, analysis)?;
     write_pocs(dir)?;

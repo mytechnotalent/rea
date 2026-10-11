@@ -31,9 +31,9 @@ use std::cmp::Reverse;
 
 // Import dependencies from rea_engine
 use rea_engine::{
-    disasm::{Disassembly, Function},
+    disasm::{DataEntry, Disassembly, Function, InstructionLine},
     insights::KeyFunction,
-    Analysis,
+    semantics, Analysis,
 };
 
 // Import dependencies from rea_report
@@ -66,6 +66,24 @@ const KEY_NOTE: &str = "Inferred: functions are ranked by the capability-relevan
 call and the indicators they reference. Listings use Intel syntax with imports, functions, and \
 strings resolved in comments.";
 
+/// Note placed above the full walkthrough.
+const WALKTHROUGH_NOTE: &str =
+    "Observed: exhaustive line-by-line disassembly walkthrough of every \
+recovered function, with semantic classification, instruction-level discussion, and dual code/data \
+literal pool analysis.";
+
+/// Instruction table columns.
+const INSTRUCTION_HEADERS: [&str; 4] = ["Address", "Instruction", "Category", "Discussion"];
+
+/// Data pool table columns.
+const DATA_HEADERS: [&str; 5] = [
+    "Address",
+    "Hex Data",
+    "As Data",
+    "As Candidate Code",
+    "Security Discussion",
+];
+
 /// Builds the code analysis and key function sections.
 ///
 /// # Arguments
@@ -77,10 +95,28 @@ strings resolved in comments.";
 /// The sections when disassembly ran, an explanation for other executables, or nothing.
 pub fn sections(analysis: &Analysis) -> Vec<Section> {
     match (&analysis.binary, &analysis.disassembly) {
-        (_, Some(code)) => vec![overview(code), key_functions(&analysis.key_functions)],
+        (_, Some(code)) => code_sections(analysis, code),
         (Some(binary), None) => vec![unsupported(&binary.arch_name)],
         (None, None) => Vec::new(),
     }
+}
+
+/// Builds all code analysis sections for recovered disassembly.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `code` - Disassembly result.
+///
+/// # Returns
+///
+/// List of sections.
+fn code_sections(analysis: &Analysis, code: &Disassembly) -> Vec<Section> {
+    vec![
+        overview(code),
+        key_functions(&analysis.key_functions),
+        walkthrough(code),
+    ]
 }
 
 /// Explains why no disassembly is present.
@@ -219,6 +255,154 @@ fn with_key(section: Section, key: &KeyFunction) -> Section {
     section.with(Block::Code(key.listing.join("\n")))
 }
 
+/// Builds the exhaustive assembly walkthrough for all recovered functions.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// The assembly walkthrough section.
+fn walkthrough(code: &Disassembly) -> Section {
+    let note = text::paragraph(WALKTHROUGH_NOTE);
+    let section = Section::new("Assembly Walkthrough & Instruction Analysis").with(note);
+    let mut funcs: Vec<&Function> = code.functions.values().collect();
+    funcs.sort_by_key(|f| f.address);
+    funcs.into_iter().fold(section, |s, f| with_function_walkthrough(s, code, f))
+}
+
+/// Appends one function's walkthrough blocks.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `code` - Recovered code structure.
+/// * `func` - Function to append.
+///
+/// # Returns
+///
+/// The extended section.
+fn with_function_walkthrough(section: Section, code: &Disassembly, func: &Function) -> Section {
+    let section = append_func_header(section, code, func);
+    let section = append_instructions(section, func);
+    append_data_pools(section, code, func)
+}
+
+/// Appends function heading and summary paragraph.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `code` - Recovered code structure.
+/// * `func` - Function to describe.
+///
+/// # Returns
+///
+/// The extended section.
+fn append_func_header(section: Section, code: &Disassembly, func: &Function) -> Section {
+    let name = code.name_of(func.address);
+    let title = format!(
+        "{name} at {} ({} instructions)",
+        text::hex(func.address),
+        func.instructions
+    );
+    let summary = semantics::summarize_function(func);
+    section.with(Block::Subheading(title)).with(Block::Paragraph(summary))
+}
+
+/// Appends the instruction table for a function.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `func` - Function whose instructions are rendered.
+///
+/// # Returns
+///
+/// The extended section.
+fn append_instructions(section: Section, func: &Function) -> Section {
+    if func.lines.is_empty() {
+        return section;
+    }
+    let rows: Vec<Vec<String>> = func.lines.iter().map(instruction_row).collect();
+    section.with(Block::Table(text::table(&INSTRUCTION_HEADERS, rows)))
+}
+
+/// Formats one instruction row.
+///
+/// # Arguments
+///
+/// * `line` - Instruction line.
+///
+/// # Returns
+///
+/// Row cells.
+fn instruction_row(line: &InstructionLine) -> Vec<String> {
+    vec![
+        text::hex(line.address),
+        line.text.clone(),
+        line.kind.clone(),
+        line.discussion.clone(),
+    ]
+}
+
+/// Appends literal pool and data analysis table.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `code` - Recovered code structure.
+/// * `func` - Function whose data pools are rendered.
+///
+/// # Returns
+///
+/// The extended section.
+fn append_data_pools(section: Section, code: &Disassembly, func: &Function) -> Section {
+    if func.data_pools.is_empty() {
+        return section;
+    }
+    let (title, table) = make_data_pool_blocks(code, func);
+    section.with(Block::Subheading(title)).with(Block::Table(table))
+}
+
+/// Builds the subheading title and formatted table for literal pools.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+/// * `func` - Function whose data pools are rendered.
+///
+/// # Returns
+///
+/// Pair of title string and formatted table.
+fn make_data_pool_blocks(code: &Disassembly, func: &Function) -> (String, rea_report::Table) {
+    let name = code.name_of(func.address);
+    let title = format!("{name} - Literal Pools & Embedded Data");
+    let rows: Vec<Vec<String>> = func.data_pools.iter().map(data_row).collect();
+    (title, text::table(&DATA_HEADERS, rows))
+}
+
+/// Formats one data pool row.
+///
+/// # Arguments
+///
+/// * `entry` - Data entry.
+///
+/// # Returns
+///
+/// Row cells.
+fn data_row(entry: &DataEntry) -> Vec<String> {
+    let as_code = entry.as_code.as_deref().unwrap_or("none");
+    vec![
+        text::hex(entry.address),
+        entry.bytes_hex.clone(),
+        entry.as_data.clone(),
+        as_code.to_string(),
+        entry.discussion.clone(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     // Import all parent module items
@@ -243,5 +427,16 @@ mod tests {
     #[test]
     fn test_sections_skip_data() {
         assert!(sections(&rea_engine::analyze("x", b"abc")).is_empty());
+    }
+
+    /// Verifies that walkthrough renders when disassembly exists.
+    #[test]
+    fn test_walkthrough_section() {
+        let code = Disassembly::default();
+        let section = walkthrough(&code);
+        assert_eq!(
+            section.heading,
+            "Assembly Walkthrough & Instruction Analysis"
+        );
     }
 }

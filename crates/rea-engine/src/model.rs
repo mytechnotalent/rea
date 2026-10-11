@@ -92,11 +92,24 @@ pub enum Arch {
 }
 
 /// Display names of known architecture families.
-const ARCH_LABELS: [(Arch, &str); 4] = [
+const ARCH_LABELS: [(Arch, &str); 17] = [
     (Arch::X86, "x86 (32-bit)"),
     (Arch::X86_64, "x86-64 (AMD64)"),
     (Arch::Arm, "ARM (32-bit)"),
     (Arch::Arm64, "ARM64 (AArch64)"),
+    (Arch::Mips, "MIPS (32-bit)"),
+    (Arch::Mips64, "MIPS64 (64-bit)"),
+    (Arch::PowerPc, "PowerPC (32-bit)"),
+    (Arch::PowerPc64, "PowerPC 64-bit"),
+    (Arch::Riscv, "RISC-V (32-bit)"),
+    (Arch::Riscv64, "RISC-V 64-bit"),
+    (Arch::Sparc, "SPARC"),
+    (Arch::SuperH, "SuperH (SH-4)"),
+    (Arch::Avr, "AVR (8-bit)"),
+    (Arch::M68k, "Motorola 68000 (M68k)"),
+    (Arch::Msp430, "MSP430 (16-bit)"),
+    (Arch::Xtensa, "Tensilica Xtensa"),
+    (Arch::LoongArch, "LoongArch (64-bit)"),
 ];
 
 impl Arch {
@@ -455,8 +468,12 @@ impl Binary {
     /// A binary with every other field empty.
     #[must_use]
     pub fn new(format: Format, arch: Arch, arch_name: &str, bits: u32) -> Self {
-        let arch_name = arch.label().unwrap_or(arch_name).to_string();
-        Self { format, arch, arch_name, bits, ..Self::default() }
+        let name = if arch_name.is_empty() {
+            arch.label().unwrap_or("Unknown").to_string()
+        } else {
+            arch_name.to_string()
+        };
+        Self { format, arch, arch_name: name, bits, ..Self::default() }
     }
 
     /// Finds the section containing a virtual address.

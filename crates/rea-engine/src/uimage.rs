@@ -48,45 +48,21 @@ fn be_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_be_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
-/// Maps basic U-Boot architecture constants to model architectures.
-///
-/// # Arguments
-///
-/// * `arch` - Architecture byte.
-///
-/// # Returns
-///
-/// The mapped architecture.
-fn arch_base(arch: u8) -> Arch {
-    match arch {
-        2 => Arch::Arm,
-        3 => Arch::X86,
-        5 => Arch::Mips,
-        6 => Arch::Mips64,
-        7 => Arch::PowerPc,
-        _ => Arch::Other,
-    }
-}
-
-/// Maps extended U-Boot architecture constants to model architectures.
-///
-/// # Arguments
-///
-/// * `arch` - Architecture byte.
-///
-/// # Returns
-///
-/// The mapped architecture.
-fn arch_ext(arch: u8) -> Arch {
-    match arch {
-        9 => Arch::SuperH,
-        10 => Arch::Sparc,
-        12 => Arch::M68k,
-        22 => Arch::Arm64,
-        24 => Arch::X86_64,
-        _ => Arch::Other,
-    }
-}
+/// Architecture mappings for U-Boot architecture identifiers.
+const UIMAGE_ARCHES: [(u8, Arch); 12] = [
+    (2, Arch::Arm),
+    (3, Arch::X86),
+    (5, Arch::Mips),
+    (6, Arch::Mips64),
+    (7, Arch::PowerPc),
+    (9, Arch::SuperH),
+    (10, Arch::Sparc),
+    (12, Arch::M68k),
+    (22, Arch::Arm64),
+    (24, Arch::X86_64),
+    (25, Arch::Riscv),
+    (28, Arch::Xtensa),
+];
 
 /// Resolves a U-Boot architecture byte to an engine architecture.
 ///
@@ -98,10 +74,8 @@ fn arch_ext(arch: u8) -> Arch {
 ///
 /// The matched architecture.
 fn arch_of(arch: u8) -> Arch {
-    match arch_base(arch) {
-        Arch::Other => arch_ext(arch),
-        found => found,
-    }
+    let found = UIMAGE_ARCHES.iter().find(|(a, _)| *a == arch);
+    found.map_or(Arch::Other, |(_, a)| *a)
 }
 
 /// Returns the operating system name for a U-Boot OS code.

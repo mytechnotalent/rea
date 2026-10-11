@@ -112,7 +112,15 @@ mod numeric;
 /// Firmware security forensics and vulnerability catalog.
 pub mod forensics;
 
+/// Electron ASAR archive parsing and JavaScript triage.
+pub mod asar;
+
+/// Semantic instruction analysis, function summarization, and data disambiguation.
+pub mod semantics;
+
 pub use analysis::{analyze, analyze_path, Analysis};
+pub use asar::{AsarIpcChannel, AsarSecret, AsarTriage, AsarWarning};
+pub use detect::Format;
 pub use discover::Finding;
 pub use emulate::{Emulation, Stop};
 pub use error::EngineError;

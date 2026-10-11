@@ -31,6 +31,7 @@ use std::{fs, path::Path};
 
 // Import crate items
 use crate::{
+    asar::{self, AsarTriage},
     capabilities::{self, Capability},
     detect::{detect, Format},
     disasm::{self, Disassembly},
@@ -108,6 +109,9 @@ pub struct Analysis {
 
     /// Firmware root filesystem triage, when a `SquashFS` container was unpacked.
     pub firmware: Option<FirmwareTriage>,
+
+    /// Electron ASAR archive triage, when an ASAR container was unpacked.
+    pub asar: Option<AsarTriage>,
 }
 
 /// Reads and analyzes a target file.
@@ -164,7 +168,7 @@ pub fn analyze(name: &str, bytes: &[u8]) -> Analysis {
     analysis.strings = strings::extract(bytes);
     analysis.indicators = iocs::scan(&analysis.strings);
     analysis.assess();
-    analysis.triage_firmware(bytes);
+    analysis.triage_all(bytes);
     analysis.study(bytes);
     analysis
 }
@@ -258,6 +262,27 @@ impl Analysis {
             let rootfs = binary.sections.iter().find(|s| s.name == "rootfs_squashfs");
             self.firmware = rootfs.and_then(|s| squashfs::triage(s.data(bytes)));
         }
+    }
+
+    /// Performs Electron ASAR archive triage if an ASAR archive is present.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - Whole target file.
+    fn triage_asar(&mut self, bytes: &[u8]) {
+        if self.format == Format::Asar || crate::detect::is_asar(bytes) {
+            self.asar = asar::parse(bytes);
+        }
+    }
+
+    /// Triages embedded filesystem containers.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - Whole target file.
+    fn triage_all(&mut self, bytes: &[u8]) {
+        self.triage_firmware(bytes);
+        self.triage_asar(bytes);
     }
 }
 

@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/rea-sleigh", "crates/rea", "crates/rea-engine", "crates/rea-report", "xtask"]
+members = ["crates/rea-sleigh", "crates/rea", "crates/rea-engine", "crates/rea-report", "crates/reverse-engineering", "xtask"]
 
 [workspace.package]
-version = "3.0.0"
+version = "3.1.0"
 edition = "2021"
 authors = ["Kevin Thomas"]
 license = "MIT"
@@ -13,6 +13,7 @@ repository = "https://github.com/mytechnotalent/rea"
 [workspace.dependencies]
 rea-engine = { path = "crates/rea-engine" }
 rea-report = { path = "crates/rea-report" }
+serde_json = "1.0"
 
 [profile.release]
 opt-level = 3

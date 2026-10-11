@@ -30,6 +30,19 @@
 use crate::{detect::Format, elf, error::EngineError, firmware, macho, model::Binary, pe, uimage};
 
 /// Dispatches raw or container firmware loaders.
+///
+/// # Arguments
+///
+/// * `bytes` - Whole target file.
+/// * `format` - Detected format.
+///
+/// # Returns
+///
+/// The parsed binary if the format is supported firmware, otherwise `None`.
+///
+/// # Errors
+///
+/// Returns [`EngineError::Parse`] if firmware structure is malformed.
 fn load_firmware(bytes: &[u8], format: Format) -> Option<Result<Binary, EngineError>> {
     match format {
         Format::CortexM => Some(firmware::parse(bytes)),

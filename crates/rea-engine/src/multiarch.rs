@@ -274,6 +274,9 @@ struct Walker<'a> {
 
     /// Structure recovered so far.
     result: Disassembly,
+
+    /// Binary architecture family.
+    arch: Arch,
 }
 
 impl<'a> Walker<'a> {
@@ -292,7 +295,8 @@ impl<'a> Walker<'a> {
         let interworking = decoder.interworking();
         let pending = roots(binary, interworking);
         let result = Disassembly { bitness: binary.bits, ..Disassembly::default() };
-        Self { decoder, code, interworking, pending, result }
+        let arch = binary.arch;
+        Self { decoder, code, interworking, pending, result, arch }
     }
 
     /// Traces functions until none remain or the function cap is reached.
@@ -329,12 +333,65 @@ impl<'a> Walker<'a> {
     ///
     /// The recovered function.
     fn trace(&mut self, start: u64) -> Function {
-        let (mut function, mut blocks, mut seen) =
-            (Function::at(start, None), vec![start], HashSet::new());
-        while let Some(block) = blocks.pop() {
-            self.block(block, &mut function, &mut blocks, &mut seen);
-        }
+        let mut function = Function::at(start, None);
+        self.drain_blocks(start, &mut function);
+        function.lines.sort_by_key(|l| l.address);
+        function.lines.dedup_by_key(|l| l.address);
+        self.analyze_data_pools(&mut function);
         function
+    }
+
+    /// Explores reachable blocks for a function.
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - Initial entry address.
+    /// * `function` - Function accumulator.
+    fn drain_blocks(&mut self, start: u64, function: &mut Function) {
+        let (mut blocks, mut seen) = (vec![start], HashSet::new());
+        while let Some(block) = blocks.pop() {
+            self.block(block, function, &mut blocks, &mut seen);
+        }
+    }
+
+    /// Extracts and analyzes referenced literal pools in code memory.
+    ///
+    /// # Arguments
+    ///
+    /// * `function` - Function being built.
+    fn analyze_data_pools(&self, function: &mut Function) {
+        let addrs: Vec<u64> = function.references.iter().copied().collect();
+        for addr in addrs {
+            self.check_pool_word(function, addr);
+        }
+    }
+
+    /// Checks and records a candidate literal pool word.
+    ///
+    /// # Arguments
+    ///
+    /// * `function` - Function accumulator.
+    /// * `addr` - Candidate pool address.
+    fn check_pool_word(&self, function: &mut Function, addr: u64) {
+        let Some(val) = self.read_pool_u32(addr) else {
+            return;
+        };
+        let entry = crate::semantics::analyze_data_word(self.arch, addr, val);
+        function.data_pools.push(entry);
+    }
+
+    /// Reads a 32-bit little-endian word from code memory if present.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - Address to read.
+    ///
+    /// # Returns
+    ///
+    /// Decoded 32-bit value if available.
+    fn read_pool_u32(&self, addr: u64) -> Option<u32> {
+        let b = self.code.contains(addr).then(|| self.code.bytes_at(addr))?;
+        (b.len() >= 4).then(|| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
 
     /// Decodes one basic block linearly until it ends.
@@ -383,9 +440,25 @@ impl<'a> Walker<'a> {
         self.result.truncated |= !room;
         (room && seen.insert(address)).then_some(())?;
         let decoded = self.decoder.decode(address, self.code.bytes_at(address))?;
+        self.record_instruction(address, &decoded, function);
+        Some(decoded)
+    }
+
+    /// Records an analyzed instruction into the function.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - Instruction address.
+    /// * `decoded` - Decoded instruction.
+    /// * `function` - Function being built.
+    fn record_instruction(&mut self, address: u64, decoded: &Decoded, function: &mut Function) {
         self.result.instructions += 1;
         function.instructions += 1;
-        Some(decoded)
+        let text = crate::semantics::format_imm_hex(&decoded.text);
+        let (kind, discussion) = crate::semantics::discuss(self.arch, address, &text);
+        function
+            .lines
+            .push(crate::disasm::InstructionLine { address, text, kind, discussion });
     }
 
     /// Records calls, branch targets, and references for one instruction.

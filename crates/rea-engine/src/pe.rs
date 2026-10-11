@@ -118,7 +118,7 @@ pub fn parse(bytes: &[u8]) -> Result<Binary, EngineError> {
     binary.sections = pe.sections.iter().map(|s| section(s, base)).collect();
     binary.imports = pe.imports.iter().map(|i| import(i, base)).collect();
     binary.exports = pe.exports.iter().filter_map(|e| export(e, base)).collect();
-    binary.function_starts = function_starts(&pe, base);
+    populate_pe_tables(&mut binary, bytes, &pe, base);
     (binary.protections, binary.facts) = (protections(&pe), facts(&pe));
     Ok(binary)
 }
@@ -210,6 +210,26 @@ fn entry_address(pe: &PE) -> u64 {
     }
 }
 
+/// Architecture mappings for known COFF machine types.
+const PE_ARCHES: [(u16, Arch); 16] = [
+    (header::COFF_MACHINE_X86, Arch::X86),
+    (header::COFF_MACHINE_X86_64, Arch::X86_64),
+    (header::COFF_MACHINE_ARM64, Arch::Arm64),
+    (header::COFF_MACHINE_ARM, Arch::Arm),
+    (header::COFF_MACHINE_ARMNT, Arch::Arm),
+    (header::COFF_MACHINE_THUMB, Arch::Arm),
+    (header::COFF_MACHINE_POWERPC, Arch::PowerPc),
+    (header::COFF_MACHINE_POWERPCFP, Arch::PowerPc),
+    (header::COFF_MACHINE_MIPS16, Arch::Mips),
+    (header::COFF_MACHINE_MIPSFPU, Arch::Mips),
+    (header::COFF_MACHINE_R4000, Arch::Mips),
+    (header::COFF_MACHINE_RISCV32, Arch::Riscv),
+    (header::COFF_MACHINE_RISCV64, Arch::Riscv64),
+    (header::COFF_MACHINE_SH3, Arch::SuperH),
+    (header::COFF_MACHINE_SH4, Arch::SuperH),
+    (header::COFF_MACHINE_LOONGARCH64, Arch::LoongArch),
+];
+
 /// Maps a COFF machine identifier to an architecture family.
 ///
 /// # Arguments
@@ -220,13 +240,8 @@ fn entry_address(pe: &PE) -> u64 {
 ///
 /// The architecture family.
 fn arch(machine: u16) -> Arch {
-    match machine {
-        header::COFF_MACHINE_X86 => Arch::X86,
-        header::COFF_MACHINE_X86_64 => Arch::X86_64,
-        header::COFF_MACHINE_ARM64 => Arch::Arm64,
-        header::COFF_MACHINE_ARM | header::COFF_MACHINE_ARMNT => Arch::Arm,
-        _ => Arch::Other,
-    }
+    let found = PE_ARCHES.iter().find(|(m, _)| *m == machine);
+    found.map_or(Arch::Other, |(_, a)| *a)
 }
 
 /// Converts one section header.
@@ -509,6 +524,111 @@ fn tls(pe: &PE) -> Option<Fact> {
 /// The internal name fact, when present.
 fn module_name(pe: &PE) -> Option<Fact> {
     pe.name.map(|name| Fact::new("Internal module name", name))
+}
+
+/// Populates symbols and function start addresses into the binary model.
+///
+/// # Arguments
+///
+/// * `binary` - Target binary model.
+/// * `bytes` - Raw file bytes.
+/// * `pe` - Parsed PE.
+/// * `base` - Image base address.
+fn populate_pe_tables(binary: &mut Binary, bytes: &[u8], pe: &PE, base: u64) {
+    binary.symbols = coff_symbols(bytes, pe, base);
+    binary.function_starts = function_starts(pe, base);
+}
+
+/// Extracts COFF symbols defined in sections from the symbol table.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw file bytes.
+/// * `pe` - Parsed PE.
+/// * `base` - Image base address.
+///
+/// # Returns
+///
+/// Defined symbols with computed virtual addresses.
+fn coff_symbols(bytes: &[u8], pe: &PE, base: u64) -> Vec<Symbol> {
+    let Ok(Some(symtab)) = pe.header.coff_header.symbols(bytes) else {
+        return Vec::new();
+    };
+    let Ok(Some(strtab)) = pe.header.coff_header.strings(bytes) else {
+        return Vec::new();
+    };
+    collect_coff_symbols(&symtab, &strtab, pe, base)
+}
+
+/// Collects defined section symbols from the COFF symbol table.
+///
+/// # Arguments
+///
+/// * `symtab` - Parsed symbol table.
+/// * `strtab` - String table for out-of-line names.
+/// * `pe` - Parsed PE.
+/// * `base` - Image base address.
+///
+/// # Returns
+///
+/// Parsed symbols.
+fn collect_coff_symbols(
+    symtab: &goblin::pe::symbol::SymbolTable<'_>,
+    strtab: &goblin::strtab::Strtab<'_>,
+    pe: &PE,
+    base: u64,
+) -> Vec<Symbol> {
+    let mut symbols = Vec::new();
+    for (_idx, _inline, sym) in symtab.iter() {
+        if let Some(entry) = coff_entry(&sym, strtab, pe, base) {
+            symbols.push(entry);
+        }
+    }
+    symbols
+}
+
+/// Converts a single COFF symbol to the model if defined in a section.
+///
+/// # Arguments
+///
+/// * `sym` - COFF symbol record.
+/// * `strtab` - String table.
+/// * `pe` - Parsed PE.
+/// * `base` - Image base address.
+///
+/// # Returns
+///
+/// Valid named symbol with virtual address, if defined.
+fn coff_entry(
+    sym: &goblin::pe::symbol::Symbol,
+    strtab: &goblin::strtab::Strtab<'_>,
+    pe: &PE,
+    base: u64,
+) -> Option<Symbol> {
+    let name = sym.name(strtab).ok()?;
+    if name.starts_with('.') || name.is_empty() {
+        return None;
+    }
+    let addr = coff_address(pe, base, sym.section_number, sym.value)?;
+    Some(Symbol::new(name, addr))
+}
+
+/// Computes the virtual address of a COFF section symbol.
+///
+/// # Arguments
+///
+/// * `pe` - Parsed PE.
+/// * `base` - Image base address.
+/// * `sec_num` - 1-based section index.
+/// * `val` - Section-relative value.
+///
+/// # Returns
+///
+/// Virtual address when section index is valid.
+fn coff_address(pe: &PE, base: u64, sec_num: i16, val: u32) -> Option<u64> {
+    let idx = usize::try_from(sec_num.checked_sub(1)?).ok()?;
+    let sec = pe.sections.get(idx)?;
+    Some(base + u64::from(sec.virtual_address) + u64::from(val))
 }
 
 #[cfg(test)]

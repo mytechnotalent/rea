@@ -1,0 +1,18 @@
+[package]
+name = "reverse-engineering"
+description = "Autonomous reverse engineering framework, pure-Rust multi-architecture disassembler, and Model Context Protocol (MCP) server."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["reverse-engineering", "disassembler", "mcp", "firmware", "decompiler"]
+categories = ["development-tools", "command-line-utilities", "embedded"]
+
+[dependencies]
+rea-engine = { path = "../rea-engine" }
+rea-report = { path = "../rea-report" }
+rea = { path = "../rea" }
+serde_json = { workspace = true }

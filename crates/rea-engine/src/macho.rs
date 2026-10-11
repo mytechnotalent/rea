@@ -172,6 +172,18 @@ fn identity(macho: &MachO) -> Binary {
     binary
 }
 
+/// Architecture mappings for Mach-O CPU types.
+const MACHO_ARCHES: [(u32, Arch); 8] = [
+    (cputype::CPU_TYPE_X86, Arch::X86),
+    (cputype::CPU_TYPE_X86_64, Arch::X86_64),
+    (cputype::CPU_TYPE_ARM, Arch::Arm),
+    (cputype::CPU_TYPE_ARM64, Arch::Arm64),
+    (cputype::CPU_TYPE_POWERPC, Arch::PowerPc),
+    (cputype::CPU_TYPE_POWERPC64, Arch::PowerPc64),
+    (cputype::CPU_TYPE_SPARC, Arch::Sparc),
+    (cputype::CPU_TYPE_MC680X0, Arch::M68k),
+];
+
 /// Maps a CPU type to an architecture family.
 ///
 /// # Arguments
@@ -182,13 +194,8 @@ fn identity(macho: &MachO) -> Binary {
 ///
 /// The architecture family.
 fn arch(cpu: u32) -> Arch {
-    match cpu {
-        cputype::CPU_TYPE_X86 => Arch::X86,
-        cputype::CPU_TYPE_X86_64 => Arch::X86_64,
-        cputype::CPU_TYPE_ARM => Arch::Arm,
-        cputype::CPU_TYPE_ARM64 => Arch::Arm64,
-        _ => Arch::Other,
-    }
+    let found = MACHO_ARCHES.iter().find(|(c, _)| *c == cpu);
+    found.map_or(Arch::Other, |(_, a)| *a)
 }
 
 /// Names a CPU type and subtype.

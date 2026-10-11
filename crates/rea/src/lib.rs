@@ -45,3 +45,9 @@ pub mod paths;
 
 /// Security artifact and threat dossier generation.
 pub mod artifacts;
+
+/// Interactive target inspection commands.
+pub mod inspect;
+
+/// Model Context Protocol (MCP) server for AI agents.
+pub mod mcp;

@@ -158,6 +158,10 @@ fn build_payload(model: &str, system: &str, prompt: &str) -> serde_json::Value {
 /// # Returns
 ///
 /// Parsed response JSON if successful.
+///
+/// # Errors
+///
+/// Returns [`ureq::Error`] on network or deserialization failure.
 fn send_request(key: &str, body: &serde_json::Value) -> Result<serde_json::Value, ureq::Error> {
     let mut res = ureq::post("https://openrouter.ai/api/v1/chat/completions")
         .header("Authorization", &format!("Bearer {key}"))
@@ -279,6 +283,20 @@ fn append_firmware(out: &mut String, a: &Analysis) {
     }
 }
 
+/// Appends binary facts to evidence text.
+///
+/// # Arguments
+///
+/// * `out` - Destination string.
+/// * `a` - Completed analysis.
+fn append_facts(out: &mut String, a: &Analysis) {
+    if let Some(b) = &a.binary {
+        for f in &b.facts {
+            let _ = writeln!(out, "FACT: {} = {}", f.label, f.value);
+        }
+    }
+}
+
 /// Compiles deterministic engine facts into an evidence dossier.
 ///
 /// # Arguments
@@ -291,6 +309,7 @@ fn append_firmware(out: &mut String, a: &Analysis) {
 fn build_evidence(a: &Analysis) -> String {
     let mut out = String::new();
     append_identity(&mut out, a);
+    append_facts(&mut out, a);
     append_capabilities(&mut out, a);
     append_firmware(&mut out, a);
     out

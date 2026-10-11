@@ -65,6 +65,9 @@ pub enum Format {
     /// `SquashFS` filesystem.
     Squashfs,
 
+    /// Electron archive (ASAR).
+    Asar,
+
     /// Unrecognized content.
     #[default]
     Unknown,
@@ -89,7 +92,7 @@ const SIGNATURES: [(&[u8], Format); 14] = [
 ];
 
 /// Human-readable format names.
-const LABELS: [(Format, &str); 13] = [
+const LABELS: [(Format, &str); 14] = [
     (Format::Pe, "Portable Executable (PE)"),
     (Format::Elf, "Executable and Linkable Format (ELF)"),
     (Format::MachO, "Mach-O"),
@@ -102,6 +105,7 @@ const LABELS: [(Format, &str); 13] = [
     (Format::CortexM, "Raw ARM Cortex-M firmware"),
     (Format::UImage, "U-Boot legacy image (uImage)"),
     (Format::Squashfs, "SquashFS filesystem"),
+    (Format::Asar, "Electron Archive (ASAR)"),
     (Format::Unknown, "Unrecognized data"),
 ];
 
@@ -145,10 +149,39 @@ impl Format {
 pub fn detect(bytes: &[u8]) -> Format {
     let found = SIGNATURES.iter().find(|(magic, _)| bytes.starts_with(magic));
     let format = refine(bytes, found.map_or(Format::Unknown, |(_, format)| *format));
-    if format == Format::Unknown && is_cortex_m(bytes) {
-        return Format::CortexM;
+    check_fallback(bytes, format)
+}
+
+/// Fallback detection for headerless or structured container formats.
+///
+/// # Arguments
+///
+/// * `bytes` - Whole target file.
+/// * `format` - Initial format classification.
+///
+/// # Returns
+///
+/// Refined format or unchanged input format.
+fn check_fallback(bytes: &[u8], format: Format) -> Format {
+    match format {
+        Format::Unknown if is_cortex_m(bytes) => Format::CortexM,
+        Format::Unknown if is_asar(bytes) => Format::Asar,
+        _ => format,
     }
-    format
+}
+
+/// Reports whether a buffer is an Electron ASAR archive.
+///
+/// # Arguments
+///
+/// * `bytes` - Whole target file.
+///
+/// # Returns
+///
+/// `true` when the header matches an ASAR pickle header.
+#[must_use]
+pub fn is_asar(bytes: &[u8]) -> bool {
+    bytes.len() >= 24 && bytes.starts_with(&[4, 0, 0, 0]) && bytes[16..].starts_with(b"{\"files\"")
 }
 
 /// Reports whether a headerless buffer looks like Cortex-M firmware.

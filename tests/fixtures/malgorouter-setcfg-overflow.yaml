@@ -1,0 +1,36 @@
+id: malgorouter-setcfg-overflow
+
+info:
+  name: MalgoRouter setcfg.cgi - Stack Buffer Overflow (unsafe copy marker)
+  author: opencode
+  severity: high
+  description: |
+    /cgi-bin/setcfg.cgi copies the "name" parameter into a 64-byte stack
+    buffer using the attacker-controlled length (it even prints
+    "copying <len> bytes into a 64-byte buffer"). A name longer than 64
+    bytes overflows the stack. This template sends a benign over-long value
+    and matches the copy banner (no crash payload).
+  reference:
+    - https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-2850
+    - https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-40869
+  classification:
+    cwe-id: CWE-120
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,overflow,cwe-120
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/setcfg.cgi?name=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "copying [0-9]+ bytes into a 64-byte"
+      - type: status
+        status:
+          - 200

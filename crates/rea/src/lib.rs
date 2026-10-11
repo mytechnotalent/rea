@@ -42,3 +42,6 @@ pub mod compose;
 
 /// Report output locations.
 pub mod paths;
+
+/// Security artifact and threat dossier generation.
+pub mod artifacts;

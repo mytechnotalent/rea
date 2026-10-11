@@ -1885,7 +1885,7 @@ dependencies = [
 
 [[package]]
 name = "rea"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "rea-engine",
  "rea-report",
@@ -1895,11 +1895,12 @@ dependencies = [
 
 [[package]]
 name = "rea-engine"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "goblin",
  "iced-x86",
  "md-5",
+ "memchr",
  "rea-sleigh",
  "rust-fs-core",
  "rust-fs-squashfs",
@@ -1909,7 +1910,7 @@ dependencies = [
 
 [[package]]
 name = "rea-report"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "typst",
  "typst-assets",
@@ -1919,7 +1920,7 @@ dependencies = [
 
 [[package]]
 name = "rea-sleigh"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "include_dir",
  "wazabin-sleigh",
@@ -3565,7 +3566,7 @@ checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
 
 [[package]]
 name = "xtask"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "proc-macro2",
  "syn 2.0.119",

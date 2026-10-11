@@ -93,6 +93,21 @@ impl Document {
     pub fn new(title: &str, subtitle: &str) -> Self {
         Self { title: title.to_string(), subtitle: subtitle.to_string(), sections: Vec::new() }
     }
+
+    /// Appends a section, returning the document for chaining.
+    ///
+    /// # Arguments
+    ///
+    /// * `section` - Section appended after existing sections.
+    ///
+    /// # Returns
+    ///
+    /// The extended document.
+    #[must_use]
+    pub fn with_section(mut self, section: Section) -> Self {
+        self.sections.push(section);
+        self
+    }
 }
 
 impl Section {
@@ -185,5 +200,13 @@ mod tests {
     fn test_document_new_is_empty() {
         let doc = Document::new("T", "S");
         assert_eq!((doc.title.as_str(), doc.sections.len()), ("T", 0));
+    }
+
+    /// Verifies that `with_section` appends sections.
+    #[test]
+    fn test_document_with_section() {
+        let doc = Document::new("T", "S").with_section(Section::new("Sec"));
+        assert_eq!(doc.sections.len(), 1);
+        assert_eq!(doc.sections[0].heading, "Sec");
     }
 }

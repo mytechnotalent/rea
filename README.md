@@ -4,9 +4,9 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v2.0.1
+# Reverse Engineering Assistant (REA) v3.0.0
 
-**Point it at a target. Get a complete reverse engineering dossier and autonomous security assessment.**
+Autonomous Reverse Engineering Framework
 
 ```bash
 rea suspect
@@ -15,6 +15,23 @@ rea suspect
 Writes `re-suspect.md` and `re-suspect.pdf` next to the target. That's the whole workflow.
 
 **Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and deterministic engine. Built in 100% pure Rust.
+
+<br>
+
+# New in v3.0.0
+
+REA v3.0.0 introduces a comprehensive nation-state intelligence suite, producing a complete multi-artifact dossier beside any target in a single pass:
+
+- **Full Multi-Artifact Dossier Generation**: Automatically generates a complete intelligence package:
+  - **Unified Technical Report** (`re-<target>.md` & `re-<target>.pdf`): Full technical report and executive findings.
+  - **Executive Threat Dossier** (`re-<target>-analysis.md` & `re-<target>-analysis.pdf`): Intelligence community threat dossiers with structured exploit chain diagrams, defensive posture evaluations, and vulnerability analysis.
+  - **Static Reverse Engineering Record** (`re-<target>-re-record.md` & `re-<target>-re-record.pdf`): Architectural specifications, memory maps, binary inventories, and dangerous sink call cross-references.
+  - **Structured Vulnerability Catalog** (`findings.json`): Machine-readable catalog across discovered vulnerabilities with CWEs, CVSS metrics, exploit paths, and remediation guidance.
+  - **Weaponized Proof-of-Concept Suite** (`pocs/`): Automated shell verification exploits, orchestration runners (`run_all.sh`), emulation setup guides (`QEMU.md`), and mitigation advisories.
+  - **Automated Nuclei Detection Templates** (`nuclei/`): Turnkey vulnerability scanners for automated detection and verification.
+  - **Decompiled Source Trees** (`decompiled/`): Recovered pseudo-C source code for critical binaries and services.
+- **Embedded Firmware & Partition Extraction**: In-memory rootfs carving, squashfs reconstruction, hardcoded credential hunting, and privilege escalation discovery.
+- **Expanded Multi-Architecture Analysis**: Native recursive-descent disassembly across x86, x86-64, ARM Cortex-A (v7-A/v8-A), ARM Cortex-M (Thumb-2), MIPS/MIPS64, PowerPC, RISC-V, SPARC, SuperH, AVR, 68000, MSP430, and Tensilica Xtensa.
 
 <br>
 

@@ -59,6 +59,12 @@ mod summary;
 /// Shared formatting helpers.
 pub mod text;
 
+/// Executive Threat Dossier.
+pub mod dossier;
+
+/// Static Reverse Engineering Record.
+pub mod record;
+
 // Import dependencies from rea_engine
 use rea_engine::Analysis;
 

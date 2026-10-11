@@ -1,0 +1,32 @@
+id: malgorouter-fingerprint
+
+info:
+  name: MalgoRouter - Device Fingerprint
+  author: opencode
+  severity: info
+  description: Identifies the MalgoRouter training firmware via its API status endpoint.
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,tech,detect
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/api.cgi?action=status"
+      - "{{BaseURL}}/"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "MalgoRouter GL-MT300N-V2"
+          - "malgorouter"
+      - type: word
+        part: body
+        words:
+          - "MalgoRouter"
+          - "admin panel"
+        condition: and

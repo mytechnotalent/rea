@@ -401,7 +401,290 @@ const DT_RELR: u64 = 36;
 fn code_pointers(elf: &Elf, bytes: &[u8], binary: &Binary) -> Vec<u64> {
     let mut targets = relative_targets(elf);
     targets.extend(relr_targets(elf, bytes, binary));
+    targets.extend(entry_libc_main(binary, bytes));
+    targets.extend(scan_prologues_and_calls(binary, bytes));
     targets
+}
+
+/// Recovers main from libc startup sequences at the entry point.
+///
+/// # Arguments
+///
+/// * `binary` - Binary model.
+/// * `bytes` - Target bytes.
+///
+/// # Returns
+///
+/// Recovered main entrypoints.
+fn entry_libc_main(binary: &Binary, bytes: &[u8]) -> Vec<u64> {
+    let mut out = Vec::new();
+    let offset = binary.offset_of(binary.entry).unwrap_or(0);
+    let chunk = window(bytes, offset, 128);
+    dispatch_libc_main(binary.arch, chunk, &mut out);
+    out
+}
+
+/// Dispatches entry sequence inspection by CPU architecture.
+///
+/// # Arguments
+///
+/// * `arch` - Target architecture.
+/// * `chunk` - Code bytes at entry.
+/// * `out` - Accumulator.
+fn dispatch_libc_main(arch: Arch, chunk: &[u8], out: &mut Vec<u64>) {
+    match arch {
+        Arch::Mips => push_mips_main(chunk, out),
+        Arch::Arm => push_arm_main(chunk, out),
+        _ => (),
+    }
+}
+
+/// Extracts MIPS main address from lui+addiu sequence in _start.
+///
+/// # Arguments
+///
+/// * `chunk` - Machine code at entry.
+/// * `out` - Accumulator.
+fn push_mips_main(chunk: &[u8], out: &mut Vec<u64>) {
+    for i in (0..chunk.len().saturating_sub(12)).step_by(4) {
+        let w = u32::from_le_bytes([chunk[i], chunk[i + 1], chunk[i + 2], chunk[i + 3]]);
+        if w >> 16 == 0x3c04 {
+            check_mips_addiu(chunk, i, w & 0xffff, out);
+        }
+    }
+}
+
+/// Computes MIPS entry address from matched lui and following addiu.
+///
+/// # Arguments
+///
+/// Computes Mips virtual address from lui high bits and addiu instruction.
+///
+/// # Arguments
+///
+/// * `hi` - High 16 bits from lui.
+/// * `w` - 32-bit addiu instruction.
+///
+/// # Returns
+///
+/// Computed address.
+fn mips_addr(hi: u32, w: u32) -> u64 {
+    let lo = i64::from(w & 0x7fff) - i64::from(w & 0x8000);
+    (u64::from(hi) << 16).wrapping_add_signed(lo)
+}
+
+/// Checks subsequent instructions for addiu a0 loading argument to libc start.
+///
+/// # Arguments
+///
+/// * `chunk` - Code buffer.
+/// * `start` - Offset of lui.
+/// * `hi` - High 16 bits.
+/// * `out` - Accumulator.
+fn check_mips_addiu(chunk: &[u8], start: usize, hi: u32, out: &mut Vec<u64>) {
+    for j in (start + 4..(start + 24).min(chunk.len())).step_by(4) {
+        let w = u32::from_le_bytes([chunk[j], chunk[j + 1], chunk[j + 2], chunk[j + 3]]);
+        if w >> 16 == 0x2484 {
+            out.push(mips_addr(hi, w) & !1);
+            break;
+        }
+    }
+}
+
+/// Extracts ARM main address from PC-relative literal loads in _start.
+///
+/// # Arguments
+/// Reads a 32-bit pointer offset from an ARM LDR pool.
+///
+/// # Arguments
+///
+/// * `chunk` - Code buffer.
+/// * `off` - Offset of pointer.
+///
+/// # Returns
+///
+/// Aligned target address if in bounds.
+fn read_arm_ptr(chunk: &[u8], off: usize) -> Option<u64> {
+    if off + 4 <= chunk.len() {
+        let addr = u32::from_le_bytes([chunk[off], chunk[off + 1], chunk[off + 2], chunk[off + 3]]);
+        Some(u64::from(addr) & !1)
+    } else {
+        None
+    }
+}
+
+/// Evaluates ARM GNU start instruction for literal pool pointer.
+///
+/// # Arguments
+///
+/// * `chunk` - Code buffer.
+/// * `i` - Instruction offset.
+/// * `w` - Instruction word.
+///
+/// # Returns
+///
+/// Pointer target if valid load.
+fn arm_entry_ptr(chunk: &[u8], i: usize, w: u32) -> Option<u64> {
+    let off = usize::try_from(w & 0xfff).ok()?;
+    ((w & 0x0fff_0000) == 0x059f_0000 && (w & 0xf000) == 0)
+        .then(|| read_arm_ptr(chunk, i + 8 + off))
+        .flatten()
+}
+
+/// Identifies candidate `main` entrypoint in ARM GNU start.
+///
+/// # Arguments
+///
+/// * `chunk` - Code buffer at entry.
+/// * `out` - Accumulator.
+fn push_arm_main(chunk: &[u8], out: &mut Vec<u64>) {
+    for i in (0..chunk.len().saturating_sub(8)).step_by(4) {
+        let w = u32::from_le_bytes([chunk[i], chunk[i + 1], chunk[i + 2], chunk[i + 3]]);
+        if let Some(target) = arm_entry_ptr(chunk, i, w) {
+            out.push(target);
+        }
+    }
+}
+
+/// Scans one executable section for function calls and prologues.
+///
+/// # Arguments
+///
+/// * `arch` - Architecture.
+/// * `sec` - Section model.
+/// * `bytes` - Whole target file.
+/// * `out` - Accumulator.
+fn scan_executable_sec(arch: Arch, sec: &Section, bytes: &[u8], out: &mut Vec<u64>) {
+    let Ok(off) = usize::try_from(sec.file_offset) else {
+        return;
+    };
+    let Ok(file_sz) = usize::try_from(sec.file_size) else {
+        return;
+    };
+    let len = file_sz.min(bytes.len().saturating_sub(off));
+    scan_sec_calls(arch, sec.address, &bytes[off..off + len], out);
+}
+
+/// Scans executable sections for function calls and prologues.
+///
+/// # Arguments
+///
+/// * `binary` - Binary model.
+/// * `bytes` - Whole target file.
+///
+/// # Returns
+///
+/// Discovered function start addresses.
+fn scan_prologues_and_calls(binary: &Binary, bytes: &[u8]) -> Vec<u64> {
+    let mut out = Vec::new();
+    for sec in binary.sections.iter().filter(|s| s.executable) {
+        scan_executable_sec(binary.arch, sec, bytes, &mut out);
+    }
+    out
+}
+
+/// Dispatches section scanning by architecture.
+///
+/// # Arguments
+///
+/// * `arch` - Architecture.
+/// * `vbase` - Section address.
+/// * `slice` - Code bytes.
+/// * `out` - Accumulator.
+fn scan_sec_calls(arch: Arch, vbase: u64, slice: &[u8], out: &mut Vec<u64>) {
+    match arch {
+        Arch::Mips => scan_mips_sec(vbase, slice, out),
+        Arch::Arm => scan_arm_sec(vbase, slice, out),
+        _ => (),
+    }
+}
+
+/// Evaluates a 32-bit MIPS word for call target or function prologue.
+///
+/// # Arguments
+///
+/// * `w` - 32-bit instruction word.
+/// * `vbase` - Section base virtual address.
+/// * `i` - Instruction byte offset within section.
+///
+/// # Returns
+///
+/// Target address if matched.
+fn mips_insn_target(w: u32, vbase: u64, i: usize) -> Option<u64> {
+    if w >> 26 == 3 {
+        Some((u64::from(w & 0x03ff_ffff) << 2) | (vbase & 0xf000_0000))
+    } else if (w >> 16) == 0x27bd && (w & 0x8000) != 0 {
+        Some(vbase.wrapping_add(i as u64))
+    } else {
+        None
+    }
+}
+
+/// Scans a MIPS code slice for JAL call targets and stack prologues.
+///
+/// # Arguments
+///
+/// * `vbase` - Section address.
+/// * `slice` - Code bytes.
+/// * `out` - Accumulator.
+fn scan_mips_sec(vbase: u64, slice: &[u8], out: &mut Vec<u64>) {
+    for i in (0..slice.len().saturating_sub(4)).step_by(4) {
+        let w = u32::from_le_bytes([slice[i], slice[i + 1], slice[i + 2], slice[i + 3]]);
+        if let Some(t) = mips_insn_target(w, vbase, i) {
+            out.push(t);
+        }
+    }
+}
+
+/// Computes ARM branch-with-link target from immediate displacement.
+///
+/// # Arguments
+///
+/// * `w` - 32-bit instruction word.
+/// * `pc` - PC address.
+///
+/// # Returns
+///
+/// Target virtual address.
+fn arm_bl_target(w: u32, pc: u64) -> u64 {
+    let disp = (i64::from(w & 0x007f_ffff) - i64::from(w & 0x0080_0000)) << 2;
+    pc.wrapping_add_signed(disp)
+}
+
+/// Evaluates a 32-bit ARM word for BL call or push prologue.
+///
+/// # Arguments
+///
+/// * `w` - 32-bit instruction word.
+/// * `vbase` - Section base virtual address.
+/// * `i` - Instruction byte offset within section.
+///
+/// # Returns
+///
+/// Target address if matched.
+fn arm_insn_target(w: u32, vbase: u64, i: usize) -> Option<u64> {
+    let va = vbase.wrapping_add(i as u64);
+    if (w >> 24) == 0xeb {
+        Some(arm_bl_target(w, va.wrapping_add(8)))
+    } else {
+        ((w >> 16) == 0xe92d).then_some(va)
+    }
+}
+
+/// Scans an ARM code slice for BL calls and push prologues.
+///
+/// # Arguments
+///
+/// * `vbase` - Section address.
+/// * `slice` - Code bytes.
+/// * `out` - Accumulator.
+fn scan_arm_sec(vbase: u64, slice: &[u8], out: &mut Vec<u64>) {
+    for i in (0..slice.len().saturating_sub(4)).step_by(4) {
+        let w = u32::from_le_bytes([slice[i], slice[i + 1], slice[i + 2], slice[i + 3]]);
+        if let Some(t) = arm_insn_target(w, vbase, i) {
+            out.push(t);
+        }
+    }
 }
 
 /// Lists pointer values relocated by a 64-bit little-endian `DT_RELR` table.

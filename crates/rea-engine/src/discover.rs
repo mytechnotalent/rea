@@ -232,7 +232,10 @@ fn is_print(byte: u8) -> bool {
 ///
 /// `true` when `needle` occurs in `hay`.
 fn contains(hay: &[u8], needle: &[u8]) -> bool {
-    !needle.is_empty() && hay.windows(needle.len()).any(|window| window == needle)
+    if needle.is_empty() {
+        return false;
+    }
+    memchr::memmem::find(hay, needle).is_some()
 }
 
 #[cfg(test)]

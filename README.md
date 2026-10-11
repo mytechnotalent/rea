@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v2.0.0
+# Reverse Engineering Assistant (REA) v2.0.1
 
 **Point it at a target. Get a complete reverse engineering dossier and autonomous security assessment.**
 
@@ -15,6 +15,17 @@ rea suspect
 Writes `re-suspect.md` and `re-suspect.pdf` next to the target. That's the whole workflow.
 
 **Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and deterministic engine. Built in 100% pure Rust.
+
+<br>
+
+# New in v2.0.1
+
+REA v2.0.1 delivers major report formatting enhancements for both PDF and Markdown outputs:
+
+- **Rich Typst Text Rendering**: Markdown bold (`**bold**`) and inline code (`` `code` ``) are natively converted to high-fidelity Typst `#strong[...]` and `#raw(...)` elements in generated PDFs, eliminating literal asterisks and backticks.
+- **Nested Inline Code Support**: Inline code embedded inside bold phrases (e.g. `**U-Boot legacy `uImage`**`) renders cleanly with appropriate font styling.
+- **Streaming Line-by-Line Block Parsing**: Multi-line paragraphs, bullet lists, subheadings, and pipe tables in AI analyst narratives are cleanly parsed into discrete document blocks, preventing multi-line lists from collapsing into monolithic headings in the Table of Contents.
+- **Clean Table of Contents**: Eliminates spurious bracket delimiters and provides clean, structured Table of Contents entries.
 
 <br>
 

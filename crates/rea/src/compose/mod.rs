@@ -63,7 +63,7 @@ pub mod text;
 use rea_engine::Analysis;
 
 // Import dependencies from rea_report
-use rea_report::{Block, Document, Section};
+use rea_report::{Block, Document, Section, Table};
 
 /// Report section builders, in reading order.
 const SECTIONS: [fn(&Analysis) -> Vec<Section>; 10] = [
@@ -79,24 +79,238 @@ const SECTIONS: [fn(&Analysis) -> Vec<Section>; 10] = [
     method::sections,
 ];
 
-/// Appends a paragraph or subheading chunk.
+/// Extracts the content of a bullet or numbered list line.
 ///
 /// # Arguments
 ///
-/// * `section` - Destination section.
-/// * `chunk` - Text chunk.
+/// * `line` - Raw line of text.
 ///
 /// # Returns
 ///
-/// Updated section.
-fn append_chunk(section: Section, chunk: &str) -> Section {
-    if chunk.is_empty() {
-        section
-    } else if chunk.starts_with('#') {
-        let title = chunk.trim_start_matches('#').trim();
-        section.with(text::subheading(title))
+/// Inner item text when the line starts with a list marker.
+fn bullet_line(line: &str) -> Option<&str> {
+    let t = line.trim();
+    if let Some(r) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
+        return Some(r);
+    }
+    let (n, r) = t.split_once(". ")?;
+    (n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty()).then_some(r)
+}
+
+/// Appends a line to the list items or extends the prior item.
+///
+/// # Arguments
+///
+/// * `items` - Accumulated items.
+/// * `line` - Next line of text.
+fn push_bullet(items: &mut Vec<String>, line: &str) {
+    if let Some(item) = bullet_line(line) {
+        items.push(item.to_string());
+    } else if let Some(last) = items.last_mut() {
+        last.push(' ');
+        last.push_str(line.trim());
+    }
+}
+
+/// Tracks partially assembled report blocks during markdown streaming.
+enum PendingBlock {
+    /// No block currently open.
+    None,
+    /// Accumulating multi-line paragraph text.
+    Paragraph(String),
+    /// Accumulating bullet list items.
+    Bullets(Vec<String>),
+    /// Accumulating table rows.
+    Table(Vec<String>),
+}
+
+/// Splits a markdown table row into trimmed cell values.
+///
+/// # Arguments
+///
+/// * `line` - Table row line.
+///
+/// # Returns
+///
+/// Extracted cell strings.
+fn parse_cells(line: &str) -> Vec<String> {
+    line.split('|')
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Parses a markdown pipe table into a structured table.
+///
+/// # Arguments
+///
+/// * `chunk` - Table text chunk.
+///
+/// # Returns
+///
+/// Parsed table when valid headers and rows exist.
+fn parse_table(chunk: &str) -> Option<Table> {
+    let mut lines = chunk.lines().filter(|l| !l.contains("---"));
+    let headers = parse_cells(lines.next()?);
+    let rows: Vec<_> = lines.map(parse_cells).filter(|r| !r.is_empty()).collect();
+    (!headers.is_empty() && !rows.is_empty()).then_some(Table { headers, rows })
+}
+
+/// Converts a completed pending block into a document block.
+///
+/// # Arguments
+///
+/// * `pending` - Completed block accumulator.
+///
+/// # Returns
+///
+/// Final block when content exists.
+fn flush_block(pending: PendingBlock) -> Option<Block> {
+    match pending {
+        PendingBlock::None => None,
+        PendingBlock::Paragraph(t) => (!t.is_empty()).then_some(Block::Paragraph(t)),
+        PendingBlock::Bullets(b) => (!b.is_empty()).then_some(Block::Bullets(b)),
+        PendingBlock::Table(lines) => parse_table(&lines.join("\n")).map(Block::Table),
+    }
+}
+
+/// Flushes the active pending block onto the section.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+fn push_flush(section: &mut Section, pending: &mut PendingBlock) {
+    let old = std::mem::replace(pending, PendingBlock::None);
+    if let Some(block) = flush_block(old) {
+        section.blocks.push(block);
+    }
+}
+
+/// Appends a subheading block after flushing prior content.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `t` - Heading line text.
+fn handle_heading(section: &mut Section, pending: &mut PendingBlock, t: &str) {
+    push_flush(section, pending);
+    let title = t.trim_start_matches('#').trim();
+    section.blocks.push(text::subheading(title));
+}
+
+/// Adds a table row line to the active table block.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `line` - Table row line.
+fn handle_table(section: &mut Section, pending: &mut PendingBlock, line: &str) {
+    if !matches!(pending, PendingBlock::Table(_)) {
+        push_flush(section, pending);
+        *pending = PendingBlock::Table(Vec::new());
+    }
+    if let PendingBlock::Table(lines) = pending {
+        lines.push(line.to_string());
+    }
+}
+
+/// Adds a bullet item to the active bullet list block.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `line` - Bullet line.
+fn handle_bullet(section: &mut Section, pending: &mut PendingBlock, line: &str) {
+    if !matches!(pending, PendingBlock::Bullets(_)) {
+        push_flush(section, pending);
+        *pending = PendingBlock::Bullets(Vec::new());
+    }
+    if let PendingBlock::Bullets(items) = pending {
+        push_bullet(items, line);
+    }
+}
+
+/// Appends trimmed text to an active paragraph.
+///
+/// # Arguments
+///
+/// * `pending` - Block accumulator.
+/// * `trimmed` - Text line.
+fn append_paragraph(pending: &mut PendingBlock, trimmed: &str) {
+    if let PendingBlock::Paragraph(p) = pending {
+        if !p.is_empty() {
+            p.push(' ');
+        }
+        p.push_str(trimmed);
+    }
+}
+
+/// Ensures the pending block is an open paragraph.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+fn ensure_paragraph(section: &mut Section, pending: &mut PendingBlock) {
+    if !matches!(pending, PendingBlock::Paragraph(_)) {
+        push_flush(section, pending);
+        *pending = PendingBlock::Paragraph(String::new());
+    }
+}
+
+/// Adds regular text to a paragraph or indented bullet.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `line` - Content line.
+fn handle_text(section: &mut Section, pending: &mut PendingBlock, line: &str) {
+    if let (PendingBlock::Bullets(items), true) = (&mut *pending, line.starts_with(' ')) {
+        push_bullet(items, line);
     } else {
-        section.with(Block::Paragraph(chunk.to_string()))
+        ensure_paragraph(section, pending);
+        append_paragraph(pending, line.trim());
+    }
+}
+
+/// Routes content lines to table, bullet, or paragraph handlers.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `line` - Line of text.
+fn route_content(section: &mut Section, pending: &mut PendingBlock, line: &str) {
+    if line.trim().starts_with('|') {
+        handle_table(section, pending, line);
+    } else if bullet_line(line).is_some() {
+        handle_bullet(section, pending, line);
+    } else {
+        handle_text(section, pending, line);
+    }
+}
+
+/// Dispatches one markdown line to the appropriate handler.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `line` - Line of text.
+fn process_line(section: &mut Section, pending: &mut PendingBlock, line: &str) {
+    let t = line.trim();
+    if t.is_empty() || t == "---" {
+        push_flush(section, pending);
+    } else if t.starts_with('#') {
+        handle_heading(section, pending, t);
+    } else {
+        route_content(section, pending, line);
     }
 }
 
@@ -111,9 +325,11 @@ fn append_chunk(section: Section, chunk: &str) -> Section {
 /// Populated section.
 fn assessment_section(text: &str) -> Section {
     let mut section = Section::new("Autonomous Security Assessment");
-    for chunk in text.split("\n\n") {
-        section = append_chunk(section, chunk.trim());
+    let mut pending = PendingBlock::None;
+    for line in text.lines() {
+        process_line(&mut section, &mut pending, line);
     }
+    push_flush(&mut section, &mut pending);
     section
 }
 
@@ -175,5 +391,18 @@ mod tests {
         let headings: Vec<String> =
             build(&analysis, None).sections.into_iter().map(|s| s.heading).collect();
         assert!(headings.iter().any(|h| h == "Key Functions"));
+    }
+
+    /// Verifies that assessment markdown parses into structured blocks.
+    #[test]
+    fn test_assessment_section_parses_blocks() {
+        let md =
+            "### Title\n\nParagraph text\n\n- Item 1\n- Item 2\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let section = assessment_section(md);
+        assert_eq!(section.blocks.len(), 4);
+        assert!(matches!(section.blocks[0], Block::Subheading(_)));
+        assert!(matches!(section.blocks[1], Block::Paragraph(_)));
+        assert!(matches!(section.blocks[2], Block::Bullets(_)));
+        assert!(matches!(section.blocks[3], Block::Table(_)));
     }
 }

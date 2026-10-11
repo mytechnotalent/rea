@@ -110,7 +110,7 @@ pub fn render(doc: &Document) -> String {
 ///
 /// Typst markup for the section.
 fn section_markup(section: &Section) -> String {
-    let mut out = format!("= {}\n\n", text(&section.heading));
+    let mut out = format!("= {}\n\n", rich(&section.heading));
     for block in &section.blocks {
         out.push_str(&block_markup(block));
         out.push('\n');
@@ -129,11 +129,11 @@ fn section_markup(section: &Section) -> String {
 /// Typst markup for the block, ending in a newline.
 fn block_markup(block: &Block) -> String {
     match block {
-        Block::Paragraph(t) => format!("{}\n", text(t)),
+        Block::Paragraph(t) => format!("{}\n", rich(t)),
         Block::Bullets(items) => items.iter().map(|i| bullet(i)).collect(),
         Block::Table(table) => table_markup(table),
         Block::Code(code) => format!("#raw(block: true, {})\n", string(code)),
-        Block::Subheading(t) => format!("== {}\n", text(t)),
+        Block::Subheading(t) => format!("== {}\n", rich(t)),
     }
 }
 
@@ -147,7 +147,7 @@ fn block_markup(block: &Block) -> String {
 ///
 /// A Typst list line.
 fn bullet(item: &str) -> String {
-    ["- ", &text(item), "\n"].concat()
+    format!("- {}\n", rich(item))
 }
 
 /// Renders a table with a repeating header row.
@@ -177,20 +177,106 @@ fn table_markup(table: &Table) -> String {
 ///
 /// A Typst content block holding the text.
 fn cell(raw: &str) -> String {
-    format!("[{}]", text(raw))
+    format!("[{}]", rich(raw))
 }
 
-/// Embeds arbitrary text in markup without interpreting any of it.
+/// Finds the opening and closing tag offsets.
 ///
 /// # Arguments
 ///
-/// * `raw` - Untrusted text.
+/// * `s` - Source text.
+/// * `tag` - Tag delimiter.
 ///
 /// # Returns
 ///
-/// A terminated `#"..."` string expression.
-fn text(raw: &str) -> String {
-    format!("#{};", string(raw))
+/// Text before the tag, inner content, and remainder.
+fn find_tag<'a>(s: &'a str, tag: &str) -> Option<(&'a str, &'a str, &'a str)> {
+    let open = s.find(tag)?;
+    let rest = &s[open + tag.len()..];
+    let close = rest.find(tag)?;
+    let (before, inner) = (&s[..open], &rest[..close]);
+    let after = &rest[close + tag.len()..];
+    Some((before, inner, after))
+}
+
+/// Parses a bold markdown token.
+///
+/// # Arguments
+///
+/// * `s` - Source text.
+///
+/// # Returns
+///
+/// Text before, Typst strong markup, and remainder.
+fn parse_bold(s: &str) -> Option<(&str, String, &str)> {
+    let (before, inner, after) = find_tag(s, "**")?;
+    Some((before, format!("#strong[{}]", rich(inner)), after))
+}
+
+/// Parses an inline code markdown token.
+///
+/// # Arguments
+///
+/// * `s` - Source text.
+///
+/// # Returns
+///
+/// Text before, Typst raw markup, and remainder.
+fn parse_raw(s: &str) -> Option<(&str, String, &str)> {
+    let (before, inner, after) = find_tag(s, "`")?;
+    Some((before, ["#raw(", &string(inner), ")"].concat(), after))
+}
+
+/// Finds the earliest inline token in text.
+///
+/// # Arguments
+///
+/// * `s` - Source text.
+///
+/// # Returns
+///
+/// Text before, formatted token, and remainder.
+fn next_token(s: &str) -> Option<(&str, String, &str)> {
+    match (parse_bold(s), parse_raw(s)) {
+        (Some(b), Some(r)) if b.0.len() <= r.0.len() => Some(b),
+        (Some(_) | None, Some(r)) => Some(r),
+        (Some(b), None) => Some(b),
+        (None, None) => None,
+    }
+}
+
+/// Appends text as a Typst text call when non-empty.
+///
+/// # Arguments
+///
+/// * `out` - Destination buffer.
+/// * `t` - Text slice.
+fn push_text(out: &mut String, t: &str) {
+    if !t.is_empty() {
+        out.push_str("#text(");
+        out.push_str(&string(t));
+        out.push(')');
+    }
+}
+
+/// Converts markdown-style inline formatting to Typst elements.
+///
+/// # Arguments
+///
+/// * `s` - Text containing markdown bold or code.
+///
+/// # Returns
+///
+/// Typst element markup.
+fn rich(mut s: &str) -> String {
+    let mut out = String::new();
+    while let Some((before, token, after)) = next_token(s) {
+        push_text(&mut out, before);
+        out.push_str(&token);
+        s = after;
+    }
+    push_text(&mut out, s);
+    out
 }
 
 /// Quotes text as a Typst string literal.
@@ -237,17 +323,27 @@ mod tests {
         assert_eq!(string("a\"b\\c\n\u{1}"), "\"a\\\"b\\\\c\\n\\u{1}\"");
     }
 
-    /// Verifies that markup characters are inert inside text.
+    /// Verifies that markup characters are inert inside rich text.
     #[test]
-    fn test_text_wraps_markup_characters() {
-        assert_eq!(text("*_#$"), "#\"*_#$\";");
+    fn test_rich_wraps_markup_characters() {
+        assert_eq!(rich("*_#$"), "#text(\"*_#$\")");
+    }
+
+    /// Verifies that bold and code are converted to Typst functions.
+    #[test]
+    fn test_rich_formats_bold_and_code() {
+        let got = rich("**bold** and `code`");
+        assert_eq!(
+            got,
+            "#strong[#text(\"bold\")]#text(\" and \")#raw(\"code\")"
+        );
     }
 
     /// Verifies table markup carries the column count and cells.
     #[test]
     fn test_table_markup_lists_cells() {
         let table = Table::new(&["A", "B"]).row(vec!["1".into(), "2".into()]);
-        let want = "#table(columns: 2, table.header([#\"A\";], [#\"B\";]), [#\"1\";], [#\"2\";])\n";
+        let want = "#table(columns: 2, table.header([#text(\"A\")], [#text(\"B\")]), [#text(\"1\")], [#text(\"2\")])\n";
         assert_eq!(table_markup(&table), want);
     }
 

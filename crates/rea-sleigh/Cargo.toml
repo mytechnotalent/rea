@@ -1,0 +1,11 @@
+[package]
+name = "rea-sleigh"
+description = "Embedded SLEIGH processor specifications and a generic multi-architecture decoder for Reverse Engineering Assistant."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+wazabin-sleigh = "0.1.14"
+include_dir = "0.7.4"

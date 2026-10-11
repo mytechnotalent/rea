@@ -1,0 +1,15 @@
+[package]
+name = "rea-engine"
+description = "Native binary analysis engine for Reverse Engineering Assistant."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+rea-sleigh = { path = "../rea-sleigh" }
+goblin = "0.10.7"
+iced-x86 = "1.21.0"
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"

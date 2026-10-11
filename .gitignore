@@ -1,0 +1,4 @@
+/target
+.env
+re-*.md
+re-*.pdf

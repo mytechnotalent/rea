@@ -1,0 +1,17 @@
+[package]
+name = "rea"
+description = "Reverse Engineering Assistant: one command, a complete reverse engineering report."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rea"
+path = "src/main.rs"
+
+[dependencies]
+rea-engine.workspace = true
+rea-report.workspace = true

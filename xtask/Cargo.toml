@@ -1,0 +1,12 @@
+[package]
+name = "xtask"
+description = "Convention checker and developer tasks for Reverse Engineering Assistant."
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "2", features = ["full", "visit"] }

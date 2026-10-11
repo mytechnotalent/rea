@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/rea-sleigh", "crates/rea", "crates/rea-engine", "crates/rea-report", "xtask"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+authors = ["Kevin Thomas"]
+license = "MIT"
+homepage = "https://github.com/mytechnotalent/rea"
+repository = "https://github.com/mytechnotalent/rea"
+
+[workspace.dependencies]
+rea-engine = { path = "crates/rea-engine" }
+rea-report = { path = "crates/rea-report" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

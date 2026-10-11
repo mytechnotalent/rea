@@ -1,0 +1,13 @@
+[package]
+name = "rea-report"
+description = "Markdown and PDF report generation for Reverse Engineering Assistant."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+typst = "0.15.1"
+typst-pdf = "0.15.1"
+typst-assets = { version = "0.15.1", features = ["fonts"] }
+typst-layout = "0.15.1"

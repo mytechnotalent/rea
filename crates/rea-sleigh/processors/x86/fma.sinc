@@ -1,0 +1,981 @@
+#
+# x86 FMA instructions
+#
+macro fmadd(dest, src1, src2, src3) {
+	dest = (src1 f* src2) f+ src3;
+}
+macro fmadd132(dest, src1, src2, src3) {
+	fmadd(dest, src1, src3, src2);
+}
+
+macro fmadd213(dest, src1, src2, src3) {
+	fmadd(dest, src2, src1, src3);
+}
+
+macro fmadd231(dest, src1, src2, src3) {
+	fmadd(dest, src2, src3, src1);
+}
+
+macro fmsub(dest, src1, src2, src3) {
+	dest = (src1 f* src2) f- src3;
+}
+
+macro fmsub132(dest, src1, src2, src3) {
+	fmsub(dest, src1, src3, src2);
+}
+
+macro fmsub213(dest, src1, src2, src3) {
+	fmsub(dest, src2, src1, src3);
+}
+
+macro fmsub231(dest, src1, src2, src3) {
+	fmsub(dest, src2, src3, src1);
+}
+
+macro fnmadd(dest, src1, src2, src3) {
+	dest = f- (src1 f* src2) f+ src3;
+}
+
+macro fnmadd132(dest, src1, src2, src3) {
+	fnmadd(dest, src1, src3, src2);
+}
+
+macro fnmadd213(dest, src1, src2, src3) {
+	fnmadd(dest, src2, src1, src3);
+}
+
+macro fnmadd231(dest, src1, src2, src3) {
+	fnmadd(dest, src2, src3, src1);
+}
+
+macro fnmsub(dest, src1, src2, src3) {
+	dest = f- (src1 f* src2) f- src3;
+}
+
+macro fnmsub132(dest, src1, src2, src3) {
+	fnmsub(dest, src1, src3, src2);
+}
+
+macro fnmsub213(dest, src1, src2, src3) {
+	fnmsub(dest, src2, src1, src3);
+}
+
+macro fnmsub231(dest, src1, src2, src3) {
+	fnmsub(dest, src2, src3, src1);
+}
+
+# VFMADD132PD/VFMADD213PD/VFMADD231PD
+:VFMADD132PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x98; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmadd132(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD213PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xA8; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+
+	fmadd213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmadd213(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD231PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xB8; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmadd231(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD132PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0x98; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd132(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fmadd132(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fmadd132(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fmadd132(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADD213PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xA8; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd213(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fmadd213(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fmadd213(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fmadd213(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADD231PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xB8; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd231(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fmadd231(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fmadd231(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fmadd231(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMADD132PS/VFMADD213PS/VFMADD231PS
+:VFMADD132PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x98; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fmadd132(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fmadd132(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fmadd132(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD213PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xA8; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fmadd213(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fmadd213(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fmadd213(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD231PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xB8; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fmadd231(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fmadd231(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fmadd231(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD132PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0x98; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd132(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmadd132(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmadd132(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmadd132(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmadd132(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmadd132(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmadd132(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmadd132(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADD213PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xA8; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd213(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmadd213(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmadd213(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmadd213(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmadd213(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmadd213(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmadd213(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmadd213(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADD231PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xB8; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd231(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmadd231(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmadd231(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmadd231(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmadd231(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmadd231(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmadd231(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmadd231(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMADD132SD/VFMADD213SD/VFMADD231SD
+:VFMADD132SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x99; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fmadd132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD213SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xA9; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fmadd213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD231SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xB9; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fmadd231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMADD132SS/VFMADD213SS/VFMADD231SS
+:VFMADD132SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x99; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fmadd132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD213SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xA9; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fmadd213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADD231SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xB9; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fmadd231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMADDSUB132PD/VFMADDSUB213PD/VFMADDSUB231PD
+:VFMADDSUB132PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x96; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmadd132(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADDSUB213PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xA6; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmadd213(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADDSUB231PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xB6; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmadd231(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADDSUB132PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0x96; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub132(YmmReg1[  0,64],YmmReg1[  0,64],vexVVVV_YmmReg[  0,64],YmmReg2_m256[  0,64]);
+	fmadd132(YmmReg1[ 64,64],YmmReg1[ 64,64],vexVVVV_YmmReg[ 64,64],YmmReg2_m256[ 64,64]);
+	fmsub132(YmmReg1[128,64],YmmReg1[128,64],vexVVVV_YmmReg[128,64],YmmReg2_m256[128,64]);
+	fmadd132(YmmReg1[192,64],YmmReg1[192,64],vexVVVV_YmmReg[192,64],YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADDSUB213PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xA6; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub213(YmmReg1[  0,64],YmmReg1[  0,64],vexVVVV_YmmReg[  0,64],YmmReg2_m256[  0,64]);
+	fmadd213(YmmReg1[ 64,64],YmmReg1[ 64,64],vexVVVV_YmmReg[ 64,64],YmmReg2_m256[ 64,64]);
+	fmsub213(YmmReg1[128,64],YmmReg1[128,64],vexVVVV_YmmReg[128,64],YmmReg2_m256[128,64]);
+	fmadd213(YmmReg1[192,64],YmmReg1[192,64],vexVVVV_YmmReg[192,64],YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADDSUB231PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xB6; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub231(YmmReg1[  0,64],YmmReg1[  0,64],vexVVVV_YmmReg[  0,64],YmmReg2_m256[  0,64]);
+	fmadd231(YmmReg1[ 64,64],YmmReg1[ 64,64],vexVVVV_YmmReg[ 64,64],YmmReg2_m256[ 64,64]);
+	fmsub231(YmmReg1[128,64],YmmReg1[128,64],vexVVVV_YmmReg[128,64],YmmReg2_m256[128,64]);
+	fmadd231(YmmReg1[192,64],YmmReg1[192,64],vexVVVV_YmmReg[192,64],YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMADDSUB132PS/VFMADDSUB213PS/VFMADDSUB231PS
+:VFMADDSUB132PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x96; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub132(XmmReg1[ 0,32],XmmReg1[ 0,32],vexVVVV_XmmReg[ 0,32],XmmReg2_m128[ 0,32]);
+	fmadd132(XmmReg1[32,32],XmmReg1[32,32],vexVVVV_XmmReg[32,32],XmmReg2_m128[32,32]);
+	fmsub132(XmmReg1[64,32],XmmReg1[64,32],vexVVVV_XmmReg[64,32],XmmReg2_m128[64,32]);
+	fmadd132(XmmReg1[96,32],XmmReg1[96,32],vexVVVV_XmmReg[96,32],XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADDSUB213PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xA6; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub213(XmmReg1[ 0,32],XmmReg1[ 0,32],vexVVVV_XmmReg[ 0,32],XmmReg2_m128[ 0,32]);
+	fmadd213(XmmReg1[32,32],XmmReg1[32,32],vexVVVV_XmmReg[32,32],XmmReg2_m128[32,32]);
+	fmsub213(XmmReg1[64,32],XmmReg1[64,32],vexVVVV_XmmReg[64,32],XmmReg2_m128[64,32]);
+	fmadd213(XmmReg1[96,32],XmmReg1[96,32],vexVVVV_XmmReg[96,32],XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADDSUB231PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xB6; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub231(XmmReg1[ 0,32],XmmReg1[ 0,32],vexVVVV_XmmReg[ 0,32],XmmReg2_m128[ 0,32]);
+	fmadd231(XmmReg1[32,32],XmmReg1[32,32],vexVVVV_XmmReg[32,32],XmmReg2_m128[32,32]);
+	fmsub231(XmmReg1[64,32],XmmReg1[64,32],vexVVVV_XmmReg[64,32],XmmReg2_m128[64,32]);
+	fmadd231(XmmReg1[96,32],XmmReg1[96,32],vexVVVV_XmmReg[96,32],XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMADDSUB132PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0x96; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub132(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmadd132(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmsub132(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmadd132(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmsub132(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmadd132(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmsub132(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmadd132(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADDSUB213PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xA6; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub213(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmadd213(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmsub213(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmadd213(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmsub213(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmadd213(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmsub213(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmadd213(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMADDSUB231PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xB6; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub231(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmadd231(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmsub231(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmadd231(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmsub231(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmadd231(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmsub231(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmadd231(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUB132PD/VFMSUB213PD/VFMSUB231PD
+:VFMSUB132PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x9A; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmsub132(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132PD/VFMSUB213PD/VFMSUB231PD
+:VFMSUB213PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xAA; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmsub213(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132PD/VFMSUB213PD/VFMSUB231PD
+:VFMSUB231PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xBA; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmsub231(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132PD/VFMSUB213PD/VFMSUB231PD
+:VFMSUB132PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0x9A; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub132(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fmsub132(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fmsub132(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fmsub132(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUB132PD/VFMSUB213PD/VFMSUB231PD
+:VFMSUB213PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xAA; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub213(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fmsub213(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fmsub213(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fmsub213(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUB132PD/VFMSUB213PD/VFMSUB231PD
+:VFMSUB231PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xBA; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub231(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fmsub231(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fmsub231(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fmsub231(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUB132PS/VFMSUB213PS/VFMSUB231PS
+:VFMSUB132PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x9A; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fmsub132(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fmsub132(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fmsub132(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132PS/VFMSUB213PS/VFMSUB231PS
+:VFMSUB213PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xAA; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fmsub213(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fmsub213(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fmsub213(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132PS/VFMSUB213PS/VFMSUB231PS
+:VFMSUB231PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xBA; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmsub231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fmsub231(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fmsub231(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fmsub231(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132PS/VFMSUB213PS/VFMSUB231PS
+:VFMSUB132PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0x9A; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub132(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmsub132(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmsub132(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmsub132(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmsub132(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmsub132(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmsub132(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmsub132(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUB132PS/VFMSUB213PS/VFMSUB231PS
+:VFMSUB213PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xAA; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub213(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmsub213(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmsub213(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmsub213(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmsub213(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmsub213(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmsub213(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmsub213(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUB132PS/VFMSUB213PS/VFMSUB231PS
+:VFMSUB231PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xBA; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmsub231(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmsub231(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmsub231(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmsub231(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmsub231(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmsub231(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmsub231(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmsub231(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUB132SD/VFMSUB213SD/VFMSUB231SD
+:VFMSUB132SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x9B; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fmsub132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132SD/VFMSUB213SD/VFMSUB231SD
+:VFMSUB213SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xAB; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fmsub213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132SD/VFMSUB213SD/VFMSUB231SD
+:VFMSUB231SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xBB; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fmsub231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132SS/VFMSUB213SS/VFMSUB231SS
+:VFMSUB132SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x9B; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fmsub132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132SS/VFMSUB213SS/VFMSUB231SS
+:VFMSUB213SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xAB; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fmsub213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUB132SS/VFMSUB213SS/VFMSUB231SS
+:VFMSUB231SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xBB; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fmsub231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFMSUBADD132PD/VFMSUBADD213PD/VFMSUBADD231PD
+:VFMSUBADD132PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x97; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmsub132(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMSUBADD213PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xA7; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmsub213(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMSUBADD231PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xB7; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fmsub231(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMSUBADD132PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0x97; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd132(YmmReg1[  0,64],YmmReg1[  0,64],vexVVVV_YmmReg[  0,64],YmmReg2_m256[  0,64]);
+	fmsub132(YmmReg1[ 64,64],YmmReg1[ 64,64],vexVVVV_YmmReg[ 64,64],YmmReg2_m256[ 64,64]);
+	fmadd132(YmmReg1[128,64],YmmReg1[128,64],vexVVVV_YmmReg[128,64],YmmReg2_m256[128,64]);
+	fmsub132(YmmReg1[192,64],YmmReg1[192,64],vexVVVV_YmmReg[192,64],YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMSUBADD213PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xA7; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd213(YmmReg1[  0,64],YmmReg1[  0,64],vexVVVV_YmmReg[  0,64],YmmReg2_m256[  0,64]);
+	fmsub213(YmmReg1[ 64,64],YmmReg1[ 64,64],vexVVVV_YmmReg[ 64,64],YmmReg2_m256[ 64,64]);
+	fmadd213(YmmReg1[128,64],YmmReg1[128,64],vexVVVV_YmmReg[128,64],YmmReg2_m256[128,64]);
+	fmsub213(YmmReg1[192,64],YmmReg1[192,64],vexVVVV_YmmReg[192,64],YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMSUBADD231PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xB7; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd231(YmmReg1[  0,64],YmmReg1[  0,64],vexVVVV_YmmReg[  0,64],YmmReg2_m256[  0,64]);
+	fmsub231(YmmReg1[ 64,64],YmmReg1[ 64,64],vexVVVV_YmmReg[ 64,64],YmmReg2_m256[ 64,64]);
+	fmadd231(YmmReg1[128,64],YmmReg1[128,64],vexVVVV_YmmReg[128,64],YmmReg2_m256[128,64]);
+	fmsub231(YmmReg1[192,64],YmmReg1[192,64],vexVVVV_YmmReg[192,64],YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFMSUBADD132PS/VFMSUBADD213PS/VFMSUBADD231PS
+:VFMSUBADD132PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x97; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd132(XmmReg1[ 0,32],XmmReg1[ 0,32],vexVVVV_XmmReg[ 0,32],XmmReg2_m128[ 0,32]);
+	fmsub132(XmmReg1[32,32],XmmReg1[32,32],vexVVVV_XmmReg[32,32],XmmReg2_m128[32,32]);
+	fmadd132(XmmReg1[64,32],XmmReg1[64,32],vexVVVV_XmmReg[64,32],XmmReg2_m128[64,32]);
+	fmsub132(XmmReg1[96,32],XmmReg1[96,32],vexVVVV_XmmReg[96,32],XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMSUBADD213PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xA7; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd213(XmmReg1[ 0,32],XmmReg1[ 0,32],vexVVVV_XmmReg[ 0,32],XmmReg2_m128[ 0,32]);
+	fmsub213(XmmReg1[32,32],XmmReg1[32,32],vexVVVV_XmmReg[32,32],XmmReg2_m128[32,32]);
+	fmadd213(XmmReg1[64,32],XmmReg1[64,32],vexVVVV_XmmReg[64,32],XmmReg2_m128[64,32]);
+	fmsub213(XmmReg1[96,32],XmmReg1[96,32],vexVVVV_XmmReg[96,32],XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMSUBADD231PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xB7; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fmadd231(XmmReg1[ 0,32],XmmReg1[ 0,32],vexVVVV_XmmReg[ 0,32],XmmReg2_m128[ 0,32]);
+	fmsub231(XmmReg1[32,32],XmmReg1[32,32],vexVVVV_XmmReg[32,32],XmmReg2_m128[32,32]);
+	fmadd231(XmmReg1[64,32],XmmReg1[64,32],vexVVVV_XmmReg[64,32],XmmReg2_m128[64,32]);
+	fmsub231(XmmReg1[96,32],XmmReg1[96,32],vexVVVV_XmmReg[96,32],XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+:VFMSUBADD132PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0x97; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd132(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmsub132(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmadd132(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmsub132(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmadd132(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmsub132(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmadd132(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmsub132(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMSUBADD213PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xA7; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd213(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmsub213(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmadd213(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmsub213(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmadd213(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmsub213(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmadd213(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmsub213(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+:VFMSUBADD231PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xB7; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fmadd231(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fmsub231(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fmadd231(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fmsub231(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fmadd231(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fmsub231(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fmadd231(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fmsub231(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMADD132PD/VFNMADD213PD/VFNMADD231PD
+:VFNMADD132PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x9C; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmadd132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fnmadd132(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132PD/VFNMADD213PD/VFNMADD231PD
+:VFNMADD213PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xAC; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmadd213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fnmadd213(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132PD/VFNMADD213PD/VFNMADD231PD
+:VFNMADD231PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xBC; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmadd231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fnmadd231(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132PD/VFNMADD213PD/VFNMADD231PD
+:VFNMADD132PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0x9C; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmadd132(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fnmadd132(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fnmadd132(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fnmadd132(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMADD132PD/VFNMADD213PD/VFNMADD231PD
+:VFNMADD213PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xAC; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmadd213(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fnmadd213(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fnmadd213(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fnmadd213(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMADD132PD/VFNMADD213PD/VFNMADD231PD
+:VFNMADD231PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xBC; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmadd231(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fnmadd231(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fnmadd231(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fnmadd231(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMADD132PS/VFNMADD213PS/VFNMADD231PS
+:VFNMADD132PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x9C; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmadd132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fnmadd132(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fnmadd132(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fnmadd132(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132PS/VFNMADD213PS/VFNMADD231PS
+:VFNMADD213PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xAC; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmadd213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fnmadd213(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fnmadd213(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fnmadd213(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132PS/VFNMADD213PS/VFNMADD231PS
+:VFNMADD231PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xBC; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmadd231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fnmadd231(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fnmadd231(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fnmadd231(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132PS/VFNMADD213PS/VFNMADD231PS
+:VFNMADD132PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0x9C; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmadd132(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fnmadd132(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fnmadd132(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fnmadd132(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fnmadd132(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fnmadd132(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fnmadd132(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fnmadd132(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMADD132PS/VFNMADD213PS/VFNMADD231PS 5-206
+:VFNMADD213PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xAC; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmadd213(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fnmadd213(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fnmadd213(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fnmadd213(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fnmadd213(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fnmadd213(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fnmadd213(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fnmadd213(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMADD132PS/VFNMADD213PS/VFNMADD231PS
+:VFNMADD231PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xBC; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmadd231(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fnmadd231(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fnmadd231(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fnmadd231(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fnmadd231(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fnmadd231(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fnmadd231(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fnmadd231(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMADD132SD/VFNMADD213SD/VFNMADD231SD
+:VFNMADD132SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x9D; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fnmadd132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132SD/VFNMADD213SD/VFNMADD231SD
+:VFNMADD213SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xAD; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fnmadd213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132SD/VFNMADD213SD/VFNMADD231SD
+:VFNMADD231SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xBD; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fnmadd231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132SS/VFNMADD213SS/VFNMADD231SS
+:VFNMADD132SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x9D; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fnmadd132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132SS/VFNMADD213SS/VFNMADD231SS
+:VFNMADD213SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xAD; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fnmadd213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMADD132SS/VFNMADD213SS/VFNMADD231SS
+:VFNMADD231SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xBD; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fnmadd231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132PD/VFNMSUB213PD/VFNMSUB231PD
+:VFNMSUB132PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x9E; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmsub132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fnmsub132(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132PD/VFNMSUB213PD/VFNMSUB231PD
+:VFNMSUB213PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xAE; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmsub213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fnmsub213(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132PD/VFNMSUB213PD/VFNMSUB231PD
+:VFNMSUB231PD XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xBE; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmsub231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m128[ 0,64]);
+	fnmsub231(XmmReg1[64,64],XmmReg1[64,64],vexVVVV_XmmReg[64,64],XmmReg2_m128[64,64]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132PD/VFNMSUB213PD/VFNMSUB231PD
+:VFNMSUB132PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0x9E; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmsub132(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fnmsub132(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fnmsub132(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fnmsub132(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMSUB132PD/VFNMSUB213PD/VFNMSUB231PD
+:VFNMSUB213PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xAE; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmsub213(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fnmsub213(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fnmsub213(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fnmsub213(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMSUB132PD/VFNMSUB213PD/VFNMSUB231PD
+:VFNMSUB231PD YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_YmmReg; byte=0xBE; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmsub231(YmmReg1[  0,64], YmmReg1[  0,64], vexVVVV_YmmReg[  0,64], YmmReg2_m256[  0,64]);
+	fnmsub231(YmmReg1[ 64,64], YmmReg1[ 64,64], vexVVVV_YmmReg[ 64,64], YmmReg2_m256[ 64,64]);
+	fnmsub231(YmmReg1[128,64], YmmReg1[128,64], vexVVVV_YmmReg[128,64], YmmReg2_m256[128,64]);
+	fnmsub231(YmmReg1[192,64], YmmReg1[192,64], vexVVVV_YmmReg[192,64], YmmReg2_m256[192,64]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMSUB132PS/VFNMSUB213PS/VFNMSUB231PS
+:VFNMSUB132PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x9E; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmsub132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fnmsub132(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fnmsub132(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fnmsub132(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132PS/VFNMSUB213PS/VFNMSUB231PS
+:VFNMSUB213PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xAE; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmsub213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fnmsub213(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fnmsub213(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fnmsub213(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132PS/VFNMSUB213PS/VFNMSUB231PS
+:VFNMSUB231PS XmmReg1, vexVVVV_XmmReg, XmmReg2_m128 is $(VEX_L128) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xBE; (XmmReg1 & ZmmReg1) ... & XmmReg2_m128
+{
+	fnmsub231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m128[ 0,32]);
+	fnmsub231(XmmReg1[32,32], XmmReg1[32,32], vexVVVV_XmmReg[32,32], XmmReg2_m128[32,32]);
+	fnmsub231(XmmReg1[64,32], XmmReg1[64,32], vexVVVV_XmmReg[64,32], XmmReg2_m128[64,32]);
+	fnmsub231(XmmReg1[96,32], XmmReg1[96,32], vexVVVV_XmmReg[96,32], XmmReg2_m128[96,32]);
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132PS/VFNMSUB213PS/VFNMSUB231PS
+:VFNMSUB132PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0x9E; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmsub132(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fnmsub132(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fnmsub132(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fnmsub132(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fnmsub132(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fnmsub132(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fnmsub132(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fnmsub132(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMSUB132PS/VFNMSUB213PS/VFNMSUB231PS
+:VFNMSUB213PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xAE; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmsub213(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fnmsub213(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fnmsub213(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fnmsub213(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fnmsub213(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fnmsub213(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fnmsub213(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fnmsub213(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMSUB132PS/VFNMSUB213PS/VFNMSUB231PS
+:VFNMSUB231PS YmmReg1, vexVVVV_YmmReg, YmmReg2_m256 is $(VEX_L256) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_YmmReg; byte=0xBE; (YmmReg1 & ZmmReg1) ... & YmmReg2_m256
+{
+	fnmsub231(YmmReg1[  0,32], YmmReg1[  0,32], vexVVVV_YmmReg[  0,32], YmmReg2_m256[  0,32]);
+	fnmsub231(YmmReg1[ 32,32], YmmReg1[ 32,32], vexVVVV_YmmReg[ 32,32], YmmReg2_m256[ 32,32]);
+	fnmsub231(YmmReg1[ 64,32], YmmReg1[ 64,32], vexVVVV_YmmReg[ 64,32], YmmReg2_m256[ 64,32]);
+	fnmsub231(YmmReg1[ 96,32], YmmReg1[ 96,32], vexVVVV_YmmReg[ 96,32], YmmReg2_m256[ 96,32]);
+	fnmsub231(YmmReg1[128,32], YmmReg1[128,32], vexVVVV_YmmReg[128,32], YmmReg2_m256[128,32]);
+	fnmsub231(YmmReg1[160,32], YmmReg1[160,32], vexVVVV_YmmReg[160,32], YmmReg2_m256[160,32]);
+	fnmsub231(YmmReg1[192,32], YmmReg1[192,32], vexVVVV_YmmReg[192,32], YmmReg2_m256[192,32]);
+	fnmsub231(YmmReg1[224,32], YmmReg1[224,32], vexVVVV_YmmReg[224,32], YmmReg2_m256[224,32]);
+	ZmmReg1 = zext(YmmReg1);
+}
+
+# VFNMSUB132SD/VFNMSUB213SD/VFNMSUB231SD
+:VFNMSUB132SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0x9F; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fnmsub132(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132SD/VFNMSUB213SD/VFNMSUB231SD
+:VFNMSUB213SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xAF; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fnmsub213(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132SD/VFNMSUB213SD/VFNMSUB231SD
+:VFNMSUB231SD XmmReg1, vexVVVV_XmmReg, XmmReg2_m64 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W1) & vexVVVV_XmmReg; byte=0xBF; (XmmReg1 & ZmmReg1) ... & XmmReg2_m64
+{
+	fnmsub231(XmmReg1[ 0,64],XmmReg1[ 0,64],vexVVVV_XmmReg[ 0,64],XmmReg2_m64[ 0,64]);
+	# XmmReg1[64,64] = XmmReg1[64,64];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132SS/VFNMSUB213SS/VFNMSUB231SS
+:VFNMSUB132SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0x9F; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fnmsub132(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132SS/VFNMSUB213SS/VFNMSUB231SS
+:VFNMSUB213SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xAF; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fnmsub213(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+
+# VFNMSUB132SS/VFNMSUB213SS/VFNMSUB231SS
+:VFNMSUB231SS XmmReg1, vexVVVV_XmmReg, XmmReg2_m32 is $(VEX_LIG) & $(VEX_PRE_66) & $(VEX_0F38) & $(VEX_W0) & vexVVVV_XmmReg; byte=0xBF; (XmmReg1 & ZmmReg1) ... & XmmReg2_m32
+{
+	fnmsub231(XmmReg1[ 0,32], XmmReg1[ 0,32], vexVVVV_XmmReg[ 0,32], XmmReg2_m32[ 0,32]);
+	# XmmReg1[32,96] = XmmReg1[32,96];
+	ZmmReg1 = zext(XmmReg1);
+}
+

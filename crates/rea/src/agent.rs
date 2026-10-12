@@ -333,7 +333,10 @@ fn append_strings_evidence(out: &mut String, a: &Analysis) {
 /// * `code` - Disassembly summary.
 fn append_code_header(out: &mut String, code: &rea_engine::disasm::Disassembly) {
     let (n_fn, ins, bit) = (code.functions.len(), code.instructions, code.bitness);
-    let _ = writeln!(out, "CODE RECOVERY: {n_fn} functions, {ins} instructions recovered ({bit}-bit).");
+    let _ = writeln!(
+        out,
+        "CODE RECOVERY: {n_fn} functions, {ins} instructions recovered ({bit}-bit)."
+    );
 }
 
 /// Appends disassembly and key function listings to evidence text.
@@ -364,18 +367,27 @@ fn append_key_func_listing(out: &mut String, key: &rea_engine::insights::KeyFunc
 }
 
 /// Appends deterministic behavioral narrative to evidence text.
+/// Flattens structured story sections into a contiguous list of facts.
+fn collect_story_facts(story: rea_engine::narrative::DetailedStory) -> Vec<String> {
+    [
+        story.boot,
+        story.main_logic,
+        story.optimization,
+        story.patching,
+    ]
+    .concat()
+}
+
+/// Appends detailed deterministic story facts to evidence output.
 ///
 /// # Arguments
 ///
 /// * `out` - Destination string.
 /// * `a` - Completed analysis.
 fn append_story_evidence(out: &mut String, a: &Analysis) {
-    let story = rea_engine::narrative::detailed_program_story(a);
-    let all = [story.boot, story.main_logic, story.optimization, story.patching];
-    for section in all {
-        for p in section {
-            let _ = writeln!(out, "DETERMINISTIC FACT: {p}");
-        }
+    let facts = collect_story_facts(rea_engine::narrative::detailed_program_story(a));
+    for p in facts {
+        let _ = writeln!(out, "DETERMINISTIC FACT: {p}");
     }
 }
 

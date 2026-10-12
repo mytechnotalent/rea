@@ -20,7 +20,7 @@ Add `reverse-engineering` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-reverse-engineering = "3.2.0"
+reverse-engineering = "4.0.0"
 ```
 
 ### Programmatic Binary Analysis

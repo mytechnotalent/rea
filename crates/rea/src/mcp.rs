@@ -35,7 +35,9 @@ use std::{
 };
 
 // Import dependencies from rea_engine
-use rea_engine::{analyze_path, Analysis};
+use rea_engine::{
+    analyze_path, format_apk_summary, format_dotnet_summary, format_go_summary, Analysis,
+};
 
 // Import dependencies from serde_json
 use serde_json::{json, Value};
@@ -151,6 +153,19 @@ fn advanced_tools() -> Value {
     ])
 }
 
+/// Returns runtime and framework inspection tools.
+///
+/// # Returns
+///
+/// JSON array of runtime tool declarations.
+fn runtime_tools() -> Value {
+    json!([
+        {"name": "inspect_go", "description": "Inspects Go runtime metadata, pclntab functions, and dependencies.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_dotnet", "description": "Inspects .NET ECMA-335 CIL runtime version, tables, and types.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_android", "description": "Inspects Android APK manifest permissions, components, and classes.dex.", "inputSchema": {"type": "object"}}
+    ])
+}
+
 /// Returns the MCP tool catalog array.
 ///
 /// # Returns
@@ -159,6 +174,7 @@ fn advanced_tools() -> Value {
 fn tool_catalog() -> Value {
     let mut all = inspect_tools().as_array().cloned().unwrap_or_default();
     all.extend(advanced_tools().as_array().cloned().unwrap_or_default());
+    all.extend(runtime_tools().as_array().cloned().unwrap_or_default());
     Value::Array(all)
 }
 
@@ -225,6 +241,25 @@ fn dispatch_adv_tool(s: &ServerSession, name: &str, args: &Value) -> String {
     }
 }
 
+/// Dispatches runtime and framework inspection tools.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+/// * `name` - Tool name.
+///
+/// # Returns
+///
+/// Result string if matched, otherwise `None`.
+fn dispatch_runtime_tool(s: &ServerSession, name: &str) -> Option<String> {
+    match name {
+        "inspect_go" => Some(call_go(s)),
+        "inspect_dotnet" => Some(call_dotnet(s)),
+        "inspect_android" => Some(call_android(s)),
+        _ => None,
+    }
+}
+
 /// Dispatches requested tool by name.
 ///
 /// # Arguments
@@ -237,7 +272,9 @@ fn dispatch_adv_tool(s: &ServerSession, name: &str, args: &Value) -> String {
 ///
 /// Output text result of the tool invocation.
 fn dispatch_tool(s: &mut ServerSession, name: &str, args: &Value) -> String {
-    dispatch_basic_tool(s, name, args).unwrap_or_else(|| dispatch_adv_tool(s, name, args))
+    dispatch_basic_tool(s, name, args)
+        .or_else(|| dispatch_runtime_tool(s, name))
+        .unwrap_or_else(|| dispatch_adv_tool(s, name, args))
 }
 
 /// Executes a tools/call request.
@@ -582,6 +619,63 @@ fn call_dossier(args: &Value) -> String {
     run_dossier(path)
 }
 
+/// Tool handler for `inspect_go`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted Go metadata summary.
+fn call_go(s: &ServerSession) -> String {
+    let Some(a) = &s.active else {
+        return "No target opened.".to_string();
+    };
+    a.go.as_ref().map_or_else(
+        || "No Go runtime metadata detected.".to_string(),
+        format_go_summary,
+    )
+}
+
+/// Tool handler for `inspect_dotnet`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted .NET metadata summary.
+fn call_dotnet(s: &ServerSession) -> String {
+    let Some(a) = &s.active else {
+        return "No target opened.".to_string();
+    };
+    a.dotnet.as_ref().map_or_else(
+        || "No .NET CLI metadata detected.".to_string(),
+        format_dotnet_summary,
+    )
+}
+
+/// Tool handler for `inspect_android`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted Android APK summary.
+fn call_android(s: &ServerSession) -> String {
+    let Some(a) = &s.active else {
+        return "No target opened.".to_string();
+    };
+    a.apk.as_ref().map_or_else(
+        || "No Android APK or DEX metadata detected.".to_string(),
+        format_apk_summary,
+    )
+}
+
 /// Handles one incoming JSON-RPC line from client.
 ///
 /// # Arguments
@@ -644,10 +738,53 @@ fn print_agent_config(title: &str, file: &str) {
 /// Exit code.
 #[must_use]
 pub fn config_cmd() -> ExitCode {
+    println!("=== Claude Code CLI ===");
+    println!("claude mcp add rea rea serve\n");
     print_agent_config("Claude Desktop", "claude_desktop_config.json");
+    print_agent_config("OpenCode & Gemini", "mcp_config.json");
     print_agent_config("Cursor", "~/.cursor/mcp.json");
     print_agent_config("Windsurf", "~/.codeium/windsurf/mcp_config.json");
-    print_agent_config("Gemini CLI & OpenCode", "mcp_config.json");
+    ExitCode::SUCCESS
+}
+
+/// Loads or initializes MCP servers JSON object.
+fn load_or_init_mcp_config(path: &Path) -> Value {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .unwrap_or_else(|| json!({"mcpServers": {}}))
+}
+
+/// Injects REA server entry into servers mapping.
+fn insert_rea_server(root: &mut Value) {
+    if let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) {
+        servers.insert("rea".into(), json!({"command": "rea", "args": ["serve"]}));
+    }
+}
+
+/// Writes or updates turnkey MCP config file.
+///
+/// # Arguments
+///
+/// * `path` - Destination file path.
+fn write_mcp_config_file(path: &Path) {
+    let mut root = load_or_init_mcp_config(path);
+    insert_rea_server(&mut root);
+    let content = serde_json::to_string_pretty(&root).unwrap_or_default();
+    let _ = std::fs::write(path, content);
+}
+
+/// Runs turnkey setup for Claude Code and `OpenCode`.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn setup_cmd() -> ExitCode {
+    write_mcp_config_file(Path::new("mcp_config.json"));
+    println!("✓ Turnkey OpenCode / AI Agent MCP configuration written to ./mcp_config.json");
+    println!("✓ Turnkey Claude Code CLI setup command:");
+    println!("  claude mcp add rea rea serve");
     ExitCode::SUCCESS
 }
 
@@ -661,6 +798,15 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 9);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 12);
+    }
+
+    /// Verifies runtime tool handlers reject empty sessions.
+    #[test]
+    fn test_runtime_tools_empty_session() {
+        let session = ServerSession::default();
+        assert_eq!(call_go(&session), "No target opened.");
+        assert_eq!(call_dotnet(&session), "No target opened.");
+        assert_eq!(call_android(&session), "No target opened.");
     }
 }

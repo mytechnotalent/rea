@@ -345,7 +345,9 @@ fn pin_of(func: &Function) -> Option<u64> {
 /// A sentence when MMIO addresses are referenced.
 fn mmio_sentence(func: &Function) -> Option<String> {
     let mmio = func.references.iter().find(|&&a| (0x4000_0000..0xf000_0000).contains(&a))?;
-    Some(format!("It accesses memory-mapped peripheral registers at {mmio:#x}."))
+    Some(format!(
+        "It accesses memory-mapped peripheral registers at {mmio:#x}."
+    ))
 }
 
 /// Sentences describing loops: infinite main loops and busy-wait delays.
@@ -539,20 +541,43 @@ pub struct DetailedStory {
     pub patching: Vec<String>,
 }
 
+/// Collects the four narrative section vectors.
+///
+/// # Arguments
+///
+/// * `ev` - Evidence resolver.
+/// * `code` - Disassembly result.
+/// * `mf` - Identified main function.
+///
+/// # Returns
+///
+/// Tuple of (boot, `main_logic`, optimization, patching) sentences.
+fn story_parts(
+    ev: &Evidence<'_>,
+    code: &Disassembly,
+    mf: Option<&Function>,
+) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+    (
+        boot_narrative(ev.binary),
+        main_logic_narrative(ev, code, mf),
+        optimization_narrative(ev, mf),
+        patching_narrative(ev.binary, mf),
+    )
+}
+
 /// Synthesizes the core narrative sections for a valid binary and code.
 ///
 /// # Arguments
 ///
 /// * `ev` - Evidence resolver.
 /// * `code` - Disassembly result.
-/// * `main_func` - Identified main function.
+/// * `mf` - Identified main function.
 ///
 /// # Returns
 ///
 /// Detailed story structure.
-fn assemble_story(ev: &Evidence<'_>, code: &Disassembly, main_func: Option<&Function>) -> DetailedStory {
-    let (boot, main_logic) = (boot_narrative(ev.binary), main_logic_narrative(ev, code, main_func));
-    let (optimization, patching) = (optimization_narrative(ev, main_func), patching_narrative(ev.binary, main_func));
+fn assemble_story(ev: &Evidence<'_>, code: &Disassembly, mf: Option<&Function>) -> DetailedStory {
+    let (boot, main_logic, optimization, patching) = story_parts(ev, code, mf);
     DetailedStory { boot, main_logic, optimization, patching }
 }
 
@@ -808,6 +833,25 @@ fn loop_print_sentence(ev: &Evidence<'_>, func: &Function) -> Vec<String> {
     out
 }
 
+/// Builds constant propagation narrative sentences if detected.
+///
+/// # Arguments
+///
+/// * `ev` - Evidence resolver.
+/// * `f` - Function to inspect.
+///
+/// # Returns
+///
+/// Formatted sentences if pattern matches.
+fn opt_prop_sentences(ev: &Evidence<'_>, f: &Function) -> Option<Vec<String>> {
+    let has_fmt = format_string_of(ev, f).is_some();
+    let imm = f.lines.iter().find_map(|l| semantics::parse_imm_dec(&l.text));
+    match (has_fmt, imm) {
+        (true, Some(val)) => Some(constant_prop_sentences(ev.binary, &val)),
+        _ => None,
+    }
+}
+
 /// Synthesizes compiler optimization and dead-code elimination analysis.
 ///
 /// # Arguments
@@ -819,14 +863,8 @@ fn loop_print_sentence(ev: &Evidence<'_>, func: &Function) -> Vec<String> {
 ///
 /// Optimization analysis sentences.
 fn optimization_narrative(ev: &Evidence<'_>, main_func: Option<&Function>) -> Vec<String> {
-    let Some(f) = main_func else { return standard_storage_sentences(ev.binary); };
-    let has_fmt = format_string_of(ev, f).is_some();
-    let imm = f.lines.iter().find_map(|l| semantics::parse_imm_dec(&l.text));
-    if let (true, Some(val)) = (has_fmt, imm) {
-        constant_prop_sentences(ev.binary, &val)
-    } else {
-        standard_storage_sentences(ev.binary)
-    }
+    let opt = main_func.and_then(|f| opt_prop_sentences(ev, f));
+    opt.unwrap_or_else(|| standard_storage_sentences(ev.binary))
 }
 
 /// Sentences explaining constant propagation and dead store elimination.
@@ -858,7 +896,9 @@ fn constant_prop_sentences(binary: &Binary, val: &str) -> Vec<String> {
 /// Second optimization narrative sentence.
 fn constant_prop_detail(binary: &Binary, val: &str) -> String {
     let mem_slot = match binary.format {
-        Format::Pe | Format::Elf | Format::MachO | Format::MachOUniversal | Format::UImage => "a heap slot or stack frame storage",
+        Format::Pe | Format::Elf | Format::MachO | Format::MachOUniversal | Format::UImage => {
+            "a heap slot or stack frame storage"
+        }
         _ => "a memory slot in SRAM or stack frame storage",
     };
     format!("Because the initial assignment is never read prior to reassignment, the compiler eliminates it entirely. Rather than reserving {mem_slot}, the compiler propagates the final constant {val} directly into machine code.")
@@ -875,7 +915,9 @@ fn constant_prop_detail(binary: &Binary, val: &str) -> String {
 /// Third optimization narrative sentence.
 fn constant_prop_storage(binary: &Binary) -> String {
     let mem_name = match binary.format {
-        Format::Pe | Format::Elf | Format::MachO | Format::MachOUniversal | Format::UImage => "code memory, eliminating memory allocation overhead",
+        Format::Pe | Format::Elf | Format::MachO | Format::MachOUniversal | Format::UImage => {
+            "code memory, eliminating memory allocation overhead"
+        }
         _ => "Flash memory, eliminating all RAM memory overhead",
     };
     format!("The variable exists purely inside processor registers as an immediate operand in {mem_name}.")
@@ -1000,7 +1042,10 @@ fn patching_narrative(binary: &Binary, main_func: Option<&Function>) -> Vec<Stri
 ///
 /// Identified patch target if found.
 fn find_patch_point(binary: &Binary, func: &Function) -> Option<PatchPoint> {
-    let line = func.lines.iter().find(|l| l.text.starts_with("movs ") && l.text.contains('#'))?;
+    let line = func
+        .lines
+        .iter()
+        .find(|l| l.text.starts_with("movs ") && l.text.contains('#'))?;
     let imm = immediate(&line.text)?;
     let byte_val = u8::try_from(imm).ok()?;
     let file_offset = line.address.checked_sub(binary.image_base)?;
@@ -1101,7 +1146,9 @@ fn gpio_behavior(code: &Disassembly) -> Option<String> {
 fn gpio_text(code: &Disassembly, func: &Function) -> String {
     let pin = pin_of(func).map_or("?".into(), |p| p.to_string());
     let name = code.name_of(func.address);
-    format!("It toggles GPIO pin {pin} using single-cycle I/O coprocessor instructions (in `{name}`).")
+    format!(
+        "It toggles GPIO pin {pin} using single-cycle I/O coprocessor instructions (in `{name}`)."
+    )
 }
 
 /// Sentence describing delay loops that pace the behavior.
@@ -1172,11 +1219,13 @@ mod tests {
     /// Tests raw firmware boot and storage narrative generation.
     #[test]
     fn test_raw_boot_and_storage() {
-        let b = Binary { format: Format::CortexM, arch_name: "ARM Cortex-M".into(), ..Default::default() };
-        let boot = boot_narrative(&b);
-        assert!(boot[0].contains("vector table"));
-        let storage = standard_storage_sentences(&b);
-        assert!(storage[0].contains("Flash memory"));
+        let b = Binary {
+            format: Format::CortexM,
+            arch_name: "ARM Cortex-M".into(),
+            ..Default::default()
+        };
+        assert!(boot_narrative(&b)[0].contains("vector table"));
+        assert!(standard_storage_sentences(&b)[0].contains("Flash memory"));
     }
 
     /// Tests U-Boot image boot and storage narrative generation.
@@ -1189,4 +1238,3 @@ mod tests {
         assert!(storage[0].contains("SquashFS"));
     }
 }
-

@@ -112,6 +112,15 @@ pub struct Analysis {
 
     /// Electron ASAR archive triage, when an ASAR container was unpacked.
     pub asar: Option<AsarTriage>,
+
+    /// Go runtime and build metadata, when Go symbols or buildinfo are detected.
+    pub go: Option<crate::go::GoMetadata>,
+
+    /// .NET CLI managed assembly metadata, when an ECMA-335 header is detected.
+    pub dotnet: Option<crate::dotnet::DotNetMetadata>,
+
+    /// Android APK or DEX metadata, when an Android package or DEX file is parsed.
+    pub apk: Option<crate::dex::ApkMetadata>,
 }
 
 /// Reads and analyzes a target file.
@@ -275,7 +284,18 @@ impl Analysis {
         }
     }
 
-    /// Triages embedded filesystem containers.
+    /// Triages specialized runtimes (Go, .NET, Android DEX/APK).
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - Whole target file.
+    fn triage_runtimes(&mut self, bytes: &[u8]) {
+        self.go = crate::go::parse_go_metadata(bytes);
+        self.dotnet = crate::dotnet::parse_dotnet_metadata(bytes);
+        self.apk = crate::dex::parse_apk_metadata(bytes);
+    }
+
+    /// Triages embedded filesystem containers and specialized runtimes.
     ///
     /// # Arguments
     ///
@@ -283,6 +303,7 @@ impl Analysis {
     fn triage_all(&mut self, bytes: &[u8]) {
         self.triage_firmware(bytes);
         self.triage_asar(bytes);
+        self.triage_runtimes(bytes);
     }
 }
 

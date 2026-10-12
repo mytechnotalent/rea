@@ -121,13 +121,25 @@ pub mod asar;
 /// Semantic instruction analysis, function summarization, and data disambiguation.
 pub mod semantics;
 
+/// Go runtime and build metadata extraction.
+pub mod go;
+
+/// .NET ECMA-335 CLI managed assembly metadata extraction.
+pub mod dotnet;
+
+/// Android DEX and APK package forensics.
+pub mod dex;
+
 pub use analysis::{analyze, analyze_path, Analysis};
 pub use asar::{AsarIpcChannel, AsarSecret, AsarTriage, AsarWarning};
 pub use detect::Format;
+pub use dex::{format_apk_summary, parse_apk_metadata, parse_dex_header, ApkMetadata, DexMetadata};
 pub use discover::Finding;
+pub use dotnet::{format_dotnet_summary, parse_dotnet_metadata, DotNetAssemblyRef, DotNetMetadata};
 pub use emulate::{Emulation, Stop};
 pub use error::EngineError;
 pub use forensics::{
     all_exploit_chains, all_vulnerabilities, format_findings_json, ExploitChain, Vulnerability,
 };
+pub use go::{format_go_summary, parse_go_metadata, GoMetadata, GoModule};
 pub use squashfs::{FirmwareTriage, SecurityArtifact, SquashfsMeta};

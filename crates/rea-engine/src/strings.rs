@@ -267,7 +267,10 @@ fn has_interleaved_digits(s: &str) -> bool {
     if s.starts_with("0x") || s.starts_with("boot") || s.starts_with("pico") {
         return false;
     }
-    b.windows(4).any(|w| (w[0].is_ascii_alphabetic() && w[1].is_ascii_digit() && w[2].is_ascii_alphabetic()) || (w[0].is_ascii_digit() && w[1].is_ascii_alphabetic() && w[2].is_ascii_digit()))
+    b.windows(4).any(|w| {
+        (w[0].is_ascii_alphabetic() && w[1].is_ascii_digit() && w[2].is_ascii_alphabetic())
+            || (w[0].is_ascii_digit() && w[1].is_ascii_alphabetic() && w[2].is_ascii_digit())
+    })
 }
 
 /// Reports whether a string containing percent signs is a plausible format string.
@@ -281,13 +284,34 @@ fn has_interleaved_digits(s: &str) -> bool {
 /// `true` for genuine format strings like `age: %d`.
 fn is_valid_format_str(s: &str) -> bool {
     let Some(idx) = s.find('%') else { return false };
-    let spec = s[idx + 1..].chars().find(|c| !c.is_ascii_digit() && !matches!(c, '-' | '+' | ' ' | '#' | '.'));
-    let valid_spec = spec.is_some_and(|c| matches!(c, 'd' | 'i' | 'u' | 'o' | 'x' | 'X' | 'f' | 's' | 'c' | 'p'));
+    let spec = s[idx + 1..]
+        .chars()
+        .find(|c| !c.is_ascii_digit() && !matches!(c, '-' | '+' | ' ' | '#' | '.'));
+    let valid_spec = spec
+        .is_some_and(|c| matches!(c, 'd' | 'i' | 'u' | 'o' | 'x' | 'X' | 'f' | 's' | 'c' | 'p'));
     let pfx = s[..idx].trim_matches(|c: char| !c.is_ascii_alphabetic());
     valid_spec && (pfx.is_empty() || pfx.chars().any(is_vowel))
 }
 
-/// Reports whether text contains an unnatural run of four or more consonants.
+/// Advances consonant run count for a character.
+///
+/// # Arguments
+///
+/// * `c` - Current character.
+/// * `run` - Previous consonant run.
+///
+/// # Returns
+///
+/// Updated consonant run count.
+fn next_consonant_run(c: char, run: usize) -> usize {
+    if c.is_ascii_alphabetic() && !is_vowel(c) {
+        run + 1
+    } else {
+        0
+    }
+}
+
+/// Reports whether a consonant sequence reaches four characters.
 ///
 /// # Arguments
 ///
@@ -299,8 +323,10 @@ fn is_valid_format_str(s: &str) -> bool {
 fn has_excessive_consonants(s: &str) -> bool {
     let mut run = 0;
     for c in s.chars() {
-        run = if c.is_ascii_alphabetic() && !is_vowel(c) { run + 1 } else { 0 };
-        if run >= 4 { return true; }
+        run = next_consonant_run(c, run);
+        if run >= 4 {
+            return true;
+        }
     }
     false
 }
@@ -323,6 +349,19 @@ fn has_repeated_letter(s: &str, alphas: usize) -> bool {
     counts.iter().any(|&cnt| cnt >= 3 && usize::from(cnt) * 5 >= alphas * 2)
 }
 
+/// Reports whether a character is an internal symbol noise delimiter.
+///
+/// # Arguments
+///
+/// * `c` - Character to test.
+///
+/// # Returns
+///
+/// `true` for non-standard punctuation noise.
+fn is_noise_char(c: char) -> bool {
+    b"@!+*)('`~^&|<>;\"'".contains(&(c as u8))
+}
+
 /// Reports whether unexpected symbols appear inside words.
 ///
 /// # Arguments
@@ -331,11 +370,11 @@ fn has_repeated_letter(s: &str, alphas: usize) -> bool {
 ///
 /// # Returns
 ///
-/// `true` when internal noise characters like `@`, `!`, `+`, `*`, `)` appear.
+/// `true` when internal noise characters appear.
 fn has_symbol_noise(s: &str) -> bool {
     let clean = s.trim_matches(|c| matches!(c, '*' | '-' | '=' | '#' | '"' | '\''));
     let inner = clean.trim_matches(|c| matches!(c, ' ' | '_' | '-' | '.' | ':' | '/' | ','));
-    inner.chars().any(|c| matches!(c, '@' | '!' | '+' | '*' | ')' | '(' | '`' | '~' | '^' | '&' | '|' | '<' | '>' | ';' | '"' | '\''))
+    inner.chars().any(is_noise_char)
 }
 
 /// Reports whether letter casing flips unnaturally back and forth.
@@ -350,7 +389,10 @@ fn has_symbol_noise(s: &str) -> bool {
 /// `true` for alternating casing noise like `aKiCa`.
 fn has_alternating_case(s: &str, alphas: usize) -> bool {
     let letters: Vec<char> = s.chars().filter(char::is_ascii_alphabetic).collect();
-    let flips = letters.windows(2).filter(|w| w[0].is_ascii_uppercase() != w[1].is_ascii_uppercase()).count();
+    let flips = letters
+        .windows(2)
+        .filter(|w| w[0].is_ascii_uppercase() != w[1].is_ascii_uppercase())
+        .count();
     flips >= 3 && flips * 2 >= alphas
 }
 
@@ -368,6 +410,56 @@ fn has_valid_word(s: &str) -> bool {
         .any(|w| w.len() >= 2 && w.chars().any(is_vowel))
 }
 
+/// Reports whether text structure has normal natural vowel and consonant rhythms.
+///
+/// # Arguments
+///
+/// * `t` - Trimmed candidate text.
+/// * `alphas` - Count of alphabetic characters.
+///
+/// # Returns
+///
+/// `true` if text follows natural rhythm.
+fn has_natural_rhythm(t: &str, alphas: usize) -> bool {
+    let vowels = t.chars().filter(|c| is_vowel(*c)).count();
+    vowels > 0
+        && vowels * 4 >= alphas
+        && !has_excessive_consonants(t)
+        && !has_repeated_letter(t, alphas)
+        && !has_alternating_case(t, alphas)
+        && has_valid_word(t)
+}
+
+/// Checks if string matches version or format string patterns.
+///
+/// # Arguments
+///
+/// * `t` - Trimmed candidate text.
+///
+/// # Returns
+///
+/// Plausibility decision if recognized as specialized format.
+fn is_special_text(t: &str) -> Option<bool> {
+    if is_version(t) {
+        return Some(true);
+    }
+    if t.contains('%') {
+        return Some(is_valid_format_str(t));
+    }
+    None
+}
+
+/// Reports whether candidate string satisfies basic length and noise checks.
+fn is_plausible_candidate(t: &str) -> bool {
+    !(t.len() < 3 || has_interleaved_digits(t) || has_symbol_noise(t))
+}
+
+/// Checks whether alphabetic characters have natural linguistic rhythm.
+fn check_natural_rhythm(t: &str) -> bool {
+    let alphas = t.chars().filter(char::is_ascii_alphabetic).count();
+    alphas >= 3 && has_natural_rhythm(t, alphas)
+}
+
 /// Reports whether an extracted string is plausible text rather than opcode noise.
 ///
 /// # Arguments
@@ -380,12 +472,10 @@ fn has_valid_word(s: &str) -> bool {
 #[must_use]
 pub fn is_plausible(s: &str) -> bool {
     let t = s.trim();
-    if t.len() < 3 || has_interleaved_digits(t) || has_symbol_noise(t) { return false; }
-    if is_version(t) { return true; }
-    if t.contains('%') { return is_valid_format_str(t); }
-    let alphas = t.chars().filter(char::is_ascii_alphabetic).count();
-    let vowels = t.chars().filter(|c| is_vowel(*c)).count();
-    alphas >= 3 && vowels > 0 && vowels * 4 >= alphas && !has_excessive_consonants(t) && !has_repeated_letter(t, alphas) && !has_alternating_case(t, alphas) && has_valid_word(t)
+    if !is_plausible_candidate(t) {
+        return false;
+    }
+    is_special_text(t).unwrap_or_else(|| check_natural_rhythm(t))
 }
 
 #[cfg(test)]
@@ -446,4 +536,3 @@ mod tests {
         assert!(!is_plausible("aKiCa"));
     }
 }
-

@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v3.2.0
+# Reverse Engineering Assistant (REA) v4.0.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,15 +18,15 @@ Writes `re-suspect.md` and `re-suspect.pdf` next to the target. That's the whole
 
 <br>
 
-# New in v3.2.0
+# New in v4.0.0
 
-REA v3.2.0 delivers format-aware behavioral modeling, elimination of cross-platform narrative hallucinations, and specialized firmware and desktop binary triage:
+REA v4.0.0 introduces native multi-ecosystem runtime forensics, deep binary format metadata extraction, and turnkey Model Context Protocol (MCP) tooling for AI coding agents:
 
-- **Format-Aware Narrative Engine**: Dedicated architectural dispatch across Windows PE (`.exe`), Linux/POSIX ELF, Darwin Mach-O, U-Boot legacy images (`uImage`), and raw embedded microcontroller firmware (`CortexM`).
-- **Zero Cross-Platform Hallucinations**: Eliminates bare-metal microcontroller vector table, Flash-to-SRAM, and clock divider narratives on desktop PE/ELF binaries and embedded Linux router images.
-- **U-Boot & Kernel Lifecycle Triage**: Specialized bootloader decompression, `kernel_entry` register handover, virtual memory management, embedded SquashFS rootfs mounting, and U-Boot CRC32/TFTP recovery patching guidance.
-- **Desktop & OS Binary Modeling**: Accurate Windows PE and Linux ELF operating system loader mapping, runtime startup (`_start`, CRT environment, SEH/TLS callbacks, stdio), and `.rdata`/`.rodata` constant layout.
-- **Production-Validated Targets**: Validated against real-world protected Windows PE crackmes, MIPS OpenWrt gateway firmware, and ARM Cortex-M bare-metal binaries.
+- **Pure-Rust Go Binary & Pclntab Forensics**: Full extraction of Go `pclntab` function tables across Go 1.2, 1.16, and 1.18+ header formats (`0xffff_fff0`, `0xffff_fffa`, `0xffff_fffb`), module dependency graphs (`modinfo`), compiler toolchain version string, and package-qualified functions without external tooling.
+- **Pure-Rust .NET CIL / ECMA-335 Parser**: Complete parsing of CLI metadata roots (`BSJB` magic), runtime version strings (e.g., `v4.0.30319`), `#~` compressed metadata tables (`TypeDef`, `MethodDef`), `#Strings` identifier stream extraction, and assembly hierarchy reconstruction.
+- **Pure-Rust Android DEX & APK Forensics**: In-memory APK package inspection, `AndroidManifest.xml` binary XML tokenization (package identity, permissions, exported activities/services/receivers), and `classes.dex` header and class/method enumeration.
+- **Model Context Protocol (MCP) Server for OpenCode & Claude Code**: Native stdio MCP server exposing 12 reverse engineering tools (`open_binary`, `binary_session`, `list_functions`, `decompile_function`, `find_xrefs`, `search_strings`, `analyze_firmware`, `analyze_javascript`, `generate_dossier`, `inspect_go`, `inspect_dotnet`, `inspect_android`).
+- **Turnkey Agent Setup**: One-step configuration via `rea mcp --setup` and `rea mcp --config` for Claude Code CLI (`claude mcp add rea rea serve`), OpenCode (`mcp_config.json`), Claude Desktop, Cursor, and Windsurf.
 
 <br>
 
@@ -92,6 +92,10 @@ Pass REA the path to any binary or firmware target. Reports are generated beside
 | PE (EXE, DLL, SYS) | Full | x86, x86-64, imports, mitigations, imphash |
 | ELF (Linux, BSD, Android) | Full | x86/x86-64 + every SLEIGH architecture |
 | Mach-O and universal | Full | x86/x86-64 + every SLEIGH architecture |
+| Go Executables (ELF/PE/Mach-O) | Full | `pclntab` functions, `modinfo` dependencies, toolchain version |
+| .NET CIL Assemblies (EXE/DLL) | Full | ECMA-335 CLI metadata, `BSJB` streams, TypeDef, MethodDef |
+| Android APK & DEX Packages | In-memory | `AndroidManifest.xml` binary XML, permissions, `classes.dex` |
+| Electron Applications (`.asar`) | In-memory | Archive unpacking, IPC channel extraction, hardcoded secrets |
 | U-Boot images (`uImage`) | Full | Kernel identification, compression, rootfs offsets |
 | SquashFS 4.0 Filesystems | In-memory | Unpacking, credential discovery, sub-target triage |
 | Raw ARM Cortex-M firmware | Vector table, flash base | ARM Thumb disassembly and handler mapping |

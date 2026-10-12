@@ -48,6 +48,7 @@ usage:
   rea <file>                  one-shot nation-state analysis and dossier generation
   rea serve | rea mcp         start Model Context Protocol (MCP) server over stdio
   rea mcp --config            print MCP config for Claude, Cursor, Windsurf, Gemini, OpenCode
+  rea mcp --setup             turnkey configure Claude Code and OpenCode MCP
   rea info <file>             inspect file headers, hashes, mitigations, and sections
   rea strings <file>          extract printable strings and security indicators
   rea decompile <file> [sym]  decompile target or function into pseudo-C
@@ -176,6 +177,7 @@ fn dispatch_named(cmd: &str, rest: &[String]) -> ExitCode {
     match cmd {
         "serve" => crate::mcp::serve_cmd(),
         "mcp" => dispatch_mcp(rest),
+        "mcp-setup" => crate::mcp::setup_cmd(),
         "analyze" => dispatch_analyze(rest),
         _ => dispatch_target(cmd, rest),
     }
@@ -205,10 +207,10 @@ fn dispatch_subcommand(cmd: &str, rest: &[String]) -> ExitCode {
 ///
 /// Process exit code.
 fn dispatch_mcp(rest: &[String]) -> ExitCode {
-    if rest.first().is_some_and(|f| f == "--config") {
-        crate::mcp::config_cmd()
-    } else {
-        crate::mcp::serve_cmd()
+    match rest.first().map(String::as_str) {
+        Some("--config" | "config") => crate::mcp::config_cmd(),
+        Some("--setup" | "setup") => crate::mcp::setup_cmd(),
+        _ => crate::mcp::serve_cmd(),
     }
 }
 
@@ -665,5 +667,11 @@ mod tests {
     #[test]
     fn test_version_names_program() {
         assert!(version().starts_with("rea "));
+    }
+
+    /// Verifies that mcp config flag returns success.
+    #[test]
+    fn test_mcp_config_flag() {
+        assert_eq!(main(&["mcp".into(), "--config".into()]), ExitCode::SUCCESS);
     }
 }

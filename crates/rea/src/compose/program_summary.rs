@@ -51,21 +51,47 @@ pub fn sections(analysis: &Analysis) -> Vec<Section> {
     vec![compose_summary(section, &story)]
 }
 
-/// Composes the full structured summary section with all subsections.
+/// Title for execution lifecycle subsection.
+const BOOT_TITLE: &str = "Execution Lifecycle & Boot Sequence";
+
+/// Title for main logic subsection.
+const MAIN_TITLE: &str = "Main Application Logic & Program Loop";
+
+/// Title for compiler optimization subsection.
+const OPT_TITLE: &str = "Variable Storage & Compiler Optimization";
+
+/// Title for reverse engineering vectors subsection.
+const PATCH_TITLE: &str = "Binary Patching & Reverse Engineering Vectors";
+
+/// Appends core logic and optimization narrative subsections.
 ///
 /// # Arguments
 ///
-/// * `section` - Initial section.
+/// * `section` - Section to extend.
+/// * `story` - Detailed program narrative.
+///
+/// # Returns
+///
+/// Updated section with core logic subsections.
+fn append_core_summary(mut section: Section, story: &narrative::DetailedStory) -> Section {
+    section = append_part(section, MAIN_TITLE, &story.main_logic);
+    append_part(section, OPT_TITLE, &story.optimization)
+}
+
+/// Composes narrative subsections into the target summary section.
+///
+/// # Arguments
+///
+/// * `section` - Section to extend.
 /// * `story` - Detailed program narrative.
 ///
 /// # Returns
 ///
 /// Completed section with headings and paragraphs.
 fn compose_summary(mut section: Section, story: &narrative::DetailedStory) -> Section {
-    section = append_part(section, "Execution Lifecycle & Boot Sequence", &story.boot);
-    section = append_part(section, "Main Application Logic & Program Loop", &story.main_logic);
-    section = append_part(section, "Variable Storage & Compiler Optimization", &story.optimization);
-    append_part(section, "Binary Patching & Reverse Engineering Vectors", &story.patching)
+    section = append_part(section, BOOT_TITLE, &story.boot);
+    section = append_core_summary(section, story);
+    append_part(section, PATCH_TITLE, &story.patching)
 }
 
 /// Appends a subheading and its paragraph blocks to a section when non-empty.

@@ -490,7 +490,10 @@ fn string_reasons(function: &Function, annotator: &Annotator) -> Vec<String> {
 /// # Returns
 ///
 /// Referenced string text if found.
-fn pool_string<'a>(entry: &crate::disasm::DataEntry, annotator: &'a Annotator) -> Option<&'a String> {
+fn pool_string<'a>(
+    entry: &crate::disasm::DataEntry,
+    annotator: &'a Annotator,
+) -> Option<&'a String> {
     let target = entry.as_data.split('[').next()?.trim();
     let hex = target.strip_prefix("0x")?;
     let addr = u64::from_str_radix(hex, 16).ok()?;
@@ -531,6 +534,25 @@ fn is_not_trap(function: &Function) -> bool {
     !prev.starts_with("bkpt") && !prev.starts_with("udf") && !prev.starts_with("wfi")
 }
 
+/// Reports whether function exhibits a non-trap backward self-loop.
+fn is_loop_candidate(function: &Function) -> bool {
+    function.lines.last().is_some_and(|l| is_self_loop(l, function.address))
+        && is_not_trap(function)
+}
+
+/// Fallback reason when no format string is identified in loop.
+fn fallback_loop_reasons(function: &Function) -> Vec<String> {
+    (!function.calls.is_empty())
+        .then(|| "Main application loop (infinite self-branching execution)".into())
+        .into_iter()
+        .collect()
+}
+
+/// Formats reason when format string was discovered in loop.
+fn format_loop_reason(fmt: &str) -> Vec<String> {
+    vec![format!("Main application loop (prints {})", quote(fmt))]
+}
+
 /// Explains main loop self-branching behavior.
 ///
 /// # Arguments
@@ -542,14 +564,13 @@ fn is_not_trap(function: &Function) -> bool {
 ///
 /// Reason when function is a main loop candidate.
 fn loop_reasons(function: &Function, annotator: &Annotator) -> Vec<String> {
-    let has_loop = function.lines.last().is_some_and(|l| is_self_loop(l, function.address));
-    if !has_loop || !is_not_trap(function) {
+    if !is_loop_candidate(function) {
         return Vec::new();
     }
-    if let Some(fmt) = find_format_string(function, annotator) {
-        return vec![format!("Main application loop (prints {})", quote(&fmt))];
-    }
-    (!function.calls.is_empty()).then(|| "Main application loop (infinite self-branching execution)".into()).into_iter().collect()
+    find_format_string(function, annotator).map_or_else(
+        || fallback_loop_reasons(function),
+        |fmt| format_loop_reason(&fmt),
+    )
 }
 
 /// Reports whether an instruction line is a backward branch into the function.

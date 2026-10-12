@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v3.1.0
+# Reverse Engineering Assistant (REA) v3.2.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,54 +18,15 @@ Writes `re-suspect.md` and `re-suspect.pdf` next to the target. That's the whole
 
 <br>
 
-# New in v3.1.0
+# New in v3.2.0
 
-REA v3.1.0 delivers major enhancements across binary disassembly, dynamic hardware triage, and report quality:
+REA v3.2.0 delivers format-aware behavioral modeling, elimination of cross-platform narrative hallucinations, and specialized firmware and desktop binary triage:
 
-- **Streamlined Assembly Walkthrough**: Provides clean, full raw assembler listings followed by natural-language functional summaries and dual code/data literal pool analysis, eliminating redundant opcode table bloat.
-- **Dynamic Microcontroller & Hardware Analysis**: Fully dynamic microcontroller identification and peripheral analysis derived directly from deterministic vector tables, memory maps, and MMIO accesses—with zero hardcoded MCU tables.
-- **Strict Opcode Noise Filtering**: Advanced semantic string filtering (`is_plausible`) differentiates authentic text and format specifiers from accidental pseudo-ASCII machine code fragments (`FKFAF`, `BFKFQF`), eliminating string hallucinations.
-- **Model Context Protocol (MCP) Server**: Turnkey integration with modern AI coding assistants (Claude Code, Cursor, Windsurf, Gemini CLI, OpenCode) through the built-in MCP server.
-
-<br>
-
-# New in v3.0.0
-
-REA v3.0.0 introduces a comprehensive nation-state intelligence suite, producing a complete multi-artifact dossier beside any target in a single pass:
-
-- **Full Multi-Artifact Dossier Generation**: Automatically generates a complete intelligence package:
-  - **Unified Technical Report** (`re-<target>.md` & `re-<target>.pdf`): Full technical report and executive findings.
-  - **Executive Threat Dossier** (`re-<target>-analysis.md` & `re-<target>-analysis.pdf`): Intelligence community threat dossiers with structured exploit chain diagrams, defensive posture evaluations, and vulnerability analysis.
-  - **Static Reverse Engineering Record** (`re-<target>-re-record.md` & `re-<target>-re-record.pdf`): Architectural specifications, memory maps, binary inventories, and dangerous sink call cross-references.
-  - **Structured Vulnerability Catalog** (`findings.json`): Machine-readable catalog across discovered vulnerabilities with CWEs, CVSS metrics, exploit paths, and remediation guidance.
-  - **Weaponized Proof-of-Concept Suite** (`pocs/`): Automated shell verification exploits, orchestration runners (`run_all.sh`), emulation setup guides (`QEMU.md`), and mitigation advisories.
-  - **Automated Nuclei Detection Templates** (`nuclei/`): Turnkey vulnerability scanners for automated detection and verification.
-  - **Decompiled Source Trees** (`decompiled/`): Recovered pseudo-C source code for critical binaries and services.
-- **Embedded Firmware & Partition Extraction**: In-memory rootfs carving, squashfs reconstruction, hardcoded credential hunting, and privilege escalation discovery.
-- **Expanded Multi-Architecture Analysis**: Native recursive-descent disassembly across x86, x86-64, ARM Cortex-A (v7-A/v8-A), ARM Cortex-M (Thumb-2), MIPS/MIPS64, PowerPC, RISC-V, SPARC, SuperH, AVR, 68000, MSP430, and Tensilica Xtensa.
-
-<br>
-
-# New in v2.0.1
-
-REA v2.0.1 delivers major report formatting enhancements for both PDF and Markdown outputs:
-
-- **Rich Typst Text Rendering**: Markdown bold (`**bold**`) and inline code (`` `code` ``) are natively converted to high-fidelity Typst `#strong[...]` and `#raw(...)` elements in generated PDFs, eliminating literal asterisks and backticks.
-- **Nested Inline Code Support**: Inline code embedded inside bold phrases (e.g. `**U-Boot legacy `uImage`**`) renders cleanly with appropriate font styling.
-- **Streaming Line-by-Line Block Parsing**: Multi-line paragraphs, bullet lists, subheadings, and pipe tables in AI analyst narratives are cleanly parsed into discrete document blocks, preventing multi-line lists from collapsing into monolithic headings in the Table of Contents.
-- **Clean Table of Contents**: Eliminates spurious bracket delimiters and provides clean, structured Table of Contents entries.
-
-<br>
-
-# New in v2.0.0
-
-REA v2.0.0 expands from a purely deterministic tool into a hybrid autonomous reverse engineering platform with built-in multi-agent AI analysis, pure-Rust firmware rootfs extraction, and sub-target deep-dive triage:
-
-- **Autonomous Multi-Agent AI Analyst Loop**: An automated 3-stage peer-reviewed deliberation loop (Analyst $\to$ Reviewer $\to$ Adjudicator) synthesizes findings into an executive security narrative with CWE verification and zero hallucinations.
-- **Embedded Firmware & SquashFS Triage**: In-memory inspection and extraction of U-Boot legacy images (`uImage`) and SquashFS 4.0 filesystems with zero external utilities (`binwalk`, `unsquashfs`).
-- **Security Artifact & Credential Discovery**: Automated detection and classification of factory private keys, SSL/TLS certificates, shadow databases, and credential seeds (e.g. weak MD5-crypt `$1$` schemes).
-- **Sub-Target Deep-Dive Analysis**: Discovers embedded executables within firmware archives and automatically analyzes priority daemons and CGI binaries with full disassembly, p-code emulation, and capability mapping.
-- **Pure-Rust TLS & Zero External C Dependencies**: Full networking and AI completions are implemented with pure-Rust TLS and `#![forbid(unsafe_code)]`.
+- **Format-Aware Narrative Engine**: Dedicated architectural dispatch across Windows PE (`.exe`), Linux/POSIX ELF, Darwin Mach-O, U-Boot legacy images (`uImage`), and raw embedded microcontroller firmware (`CortexM`).
+- **Zero Cross-Platform Hallucinations**: Eliminates bare-metal microcontroller vector table, Flash-to-SRAM, and clock divider narratives on desktop PE/ELF binaries and embedded Linux router images.
+- **U-Boot & Kernel Lifecycle Triage**: Specialized bootloader decompression, `kernel_entry` register handover, virtual memory management, embedded SquashFS rootfs mounting, and U-Boot CRC32/TFTP recovery patching guidance.
+- **Desktop & OS Binary Modeling**: Accurate Windows PE and Linux ELF operating system loader mapping, runtime startup (`_start`, CRT environment, SEH/TLS callbacks, stdio), and `.rdata`/`.rodata` constant layout.
+- **Production-Validated Targets**: Validated against real-world protected Windows PE crackmes, MIPS OpenWrt gateway firmware, and ARM Cortex-M bare-metal binaries.
 
 <br>
 

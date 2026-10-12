@@ -31,9 +31,10 @@ use std::cmp::Reverse;
 
 // Import dependencies from rea_engine
 use rea_engine::{
-    disasm::{DataEntry, Disassembly, Function, InstructionLine},
+    disasm::{DataEntry, Disassembly, Function},
     insights::KeyFunction,
-    semantics, Analysis,
+    narrative::{self, Evidence},
+    Analysis,
 };
 
 // Import dependencies from rea_report
@@ -68,12 +69,9 @@ strings resolved in comments.";
 
 /// Note placed above the full walkthrough.
 const WALKTHROUGH_NOTE: &str =
-    "Observed: exhaustive line-by-line disassembly walkthrough of every \
-recovered function, with semantic classification, instruction-level discussion, and dual code/data \
-literal pool analysis.";
-
-/// Instruction table columns.
-const INSTRUCTION_HEADERS: [&str; 4] = ["Address", "Instruction", "Category", "Discussion"];
+    "Observed: complete disassembly of every recovered function. Each function shows the full \
+raw assembler listing first, followed by a plain-language summary of what the function actually \
+does, and dual code/data analysis of any embedded literal pools.";
 
 /// Data pool table columns.
 const DATA_HEADERS: [&str; 5] = [
@@ -112,11 +110,11 @@ pub fn sections(analysis: &Analysis) -> Vec<Section> {
 ///
 /// List of sections.
 fn code_sections(analysis: &Analysis, code: &Disassembly) -> Vec<Section> {
-    vec![
-        overview(code),
-        key_functions(&analysis.key_functions),
-        walkthrough(code),
-    ]
+    let mut sections = vec![overview(code), key_functions(&analysis.key_functions)];
+    if !code.functions.is_empty() {
+        sections.push(walkthrough(analysis, code));
+    }
+    sections
 }
 
 /// Explains why no disassembly is present.
@@ -259,17 +257,39 @@ fn with_key(section: Section, key: &KeyFunction) -> Section {
 ///
 /// # Arguments
 ///
+/// * `analysis` - Completed analysis.
 /// * `code` - Recovered code structure.
 ///
 /// # Returns
 ///
 /// The assembly walkthrough section.
-fn walkthrough(code: &Disassembly) -> Section {
+fn walkthrough(analysis: &Analysis, code: &Disassembly) -> Section {
     let note = text::paragraph(WALKTHROUGH_NOTE);
     let section = Section::new("Assembly Walkthrough & Instruction Analysis").with(note);
+    let ev = build_walkthrough_evidence(analysis, code);
     let mut funcs: Vec<&Function> = code.functions.values().collect();
     funcs.sort_by_key(|f| f.address);
-    funcs.into_iter().fold(section, |s, f| with_function_walkthrough(s, code, f))
+    funcs.into_iter().fold(section, |s, f| {
+        with_function_walkthrough(s, ev.as_ref(), code, f)
+    })
+}
+
+/// Builds the evidence resolver precomputed with the recovered call graph.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `code` - Disassembly result.
+///
+/// # Returns
+///
+/// The resolver when binary metadata exists.
+fn build_walkthrough_evidence<'a>(
+    analysis: &'a Analysis,
+    code: &Disassembly,
+) -> Option<Evidence<'a>> {
+    let bin = analysis.binary.as_ref()?;
+    Some(Evidence::new(bin, &analysis.strings).with_callers(code))
 }
 
 /// Appends one function's walkthrough blocks.
@@ -277,19 +297,26 @@ fn walkthrough(code: &Disassembly) -> Section {
 /// # Arguments
 ///
 /// * `section` - Section being built.
+/// * `ev` - Evidence resolver, when a parsed binary exists.
 /// * `code` - Recovered code structure.
 /// * `func` - Function to append.
 ///
 /// # Returns
 ///
 /// The extended section.
-fn with_function_walkthrough(section: Section, code: &Disassembly, func: &Function) -> Section {
-    let section = append_func_header(section, code, func);
-    let section = append_instructions(section, func);
+fn with_function_walkthrough(
+    section: Section,
+    ev: Option<&Evidence<'_>>,
+    code: &Disassembly,
+    func: &Function,
+) -> Section {
+    let section = append_func_heading(section, code, func);
+    let section = append_raw_listing(section, func);
+    let section = append_func_summary(section, ev, code, func);
     append_data_pools(section, code, func)
 }
 
-/// Appends function heading and summary paragraph.
+/// Appends the function heading.
 ///
 /// # Arguments
 ///
@@ -300,51 +327,68 @@ fn with_function_walkthrough(section: Section, code: &Disassembly, func: &Functi
 /// # Returns
 ///
 /// The extended section.
-fn append_func_header(section: Section, code: &Disassembly, func: &Function) -> Section {
+fn append_func_heading(section: Section, code: &Disassembly, func: &Function) -> Section {
     let name = code.name_of(func.address);
     let title = format!(
         "{name} at {} ({} instructions)",
         text::hex(func.address),
         func.instructions
     );
-    let summary = semantics::summarize_function(func);
-    section.with(Block::Subheading(title)).with(Block::Paragraph(summary))
+    section.with(Block::Subheading(title))
 }
 
-/// Appends the instruction table for a function.
+/// Appends the complete raw assembler listing for a function.
 ///
 /// # Arguments
 ///
 /// * `section` - Section being built.
-/// * `func` - Function whose instructions are rendered.
+/// * `func` - Function whose listing is rendered.
 ///
 /// # Returns
 ///
 /// The extended section.
-fn append_instructions(section: Section, func: &Function) -> Section {
+fn append_raw_listing(section: Section, func: &Function) -> Section {
     if func.lines.is_empty() {
         return section;
     }
-    let rows: Vec<Vec<String>> = func.lines.iter().map(instruction_row).collect();
-    section.with(Block::Table(text::table(&INSTRUCTION_HEADERS, rows)))
+    let listing: Vec<String> = func.lines.iter().map(format_line).collect();
+    section.with(Block::Code(listing.join("\n")))
 }
 
-/// Formats one instruction row.
+/// Formats one raw assembler line with its address.
 ///
 /// # Arguments
 ///
-/// * `line` - Instruction line.
+/// * `line` - Decoded instruction line.
 ///
 /// # Returns
 ///
-/// Row cells.
-fn instruction_row(line: &InstructionLine) -> Vec<String> {
-    vec![
-        text::hex(line.address),
-        line.text.clone(),
-        line.kind.clone(),
-        line.discussion.clone(),
-    ]
+/// Text such as `0x1000023a: movs r1, #0x2b`.
+fn format_line(line: &rea_engine::disasm::InstructionLine) -> String {
+    format!("{}: {}", text::hex(line.address), line.text)
+}
+
+/// Appends the plain-language summary of what the function does.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `ev` - Evidence resolver, when a parsed binary exists.
+/// * `code` - Recovered code structure.
+/// * `func` - Function to summarize.
+///
+/// # Returns
+///
+/// The extended section.
+fn append_func_summary(
+    section: Section,
+    ev: Option<&Evidence<'_>>,
+    code: &Disassembly,
+    func: &Function,
+) -> Section {
+    let Some(ev) = ev else { return section };
+    let story = narrative::function_story(ev, code, func);
+    section.with(Block::Paragraph(story.join(" ")))
 }
 
 /// Appends literal pool and data analysis table.
@@ -432,8 +476,8 @@ mod tests {
     /// Verifies that walkthrough renders when disassembly exists.
     #[test]
     fn test_walkthrough_section() {
-        let code = Disassembly::default();
-        let section = walkthrough(&code);
+        let analysis = rea_engine::analyze("x", b"abc");
+        let section = walkthrough(&analysis, &Disassembly::default());
         assert_eq!(
             section.heading,
             "Assembly Walkthrough & Instruction Analysis"

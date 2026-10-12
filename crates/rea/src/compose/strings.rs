@@ -155,7 +155,8 @@ fn with_sample(section: Section, sample: String) -> Section {
 /// One `offset  text` line per sampled string.
 fn sample(strings: &[FoundString], binary: Option<&Binary>) -> String {
     let long = strings.iter().filter(|s| s.text.trim().len() >= SAMPLE_MIN);
-    let data = long.filter(|s| !in_code(binary, s.offset));
+    let plausible = long.filter(|s| rea_engine::strings::is_plausible(&s.text));
+    let data = plausible.filter(|s| !in_code(binary, s.offset));
     let lines: Vec<String> = data.take(MAX_SAMPLE).map(sample_line).collect();
     lines.join("\n")
 }

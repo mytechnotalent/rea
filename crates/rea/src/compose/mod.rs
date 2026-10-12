@@ -56,6 +56,9 @@ mod strings;
 /// Executive summary.
 mod summary;
 
+/// Top-level plain-English description of program behavior.
+mod program_summary;
+
 /// Shared formatting helpers.
 pub mod text;
 
@@ -72,8 +75,9 @@ use rea_engine::Analysis;
 use rea_report::{Block, Document, Section, Table};
 
 /// Report section builders, in reading order.
-const SECTIONS: [fn(&Analysis) -> Vec<Section>; 10] = [
+const SECTIONS: [fn(&Analysis) -> Vec<Section>; 11] = [
     summary::sections,
+    program_summary::sections,
     identity::sections,
     structure::sections,
     firmware::sections,
@@ -203,7 +207,7 @@ fn push_flush(section: &mut Section, pending: &mut PendingBlock) {
 /// * `t` - Heading line text.
 fn handle_heading(section: &mut Section, pending: &mut PendingBlock, t: &str) {
     push_flush(section, pending);
-    let title = t.trim_start_matches('#').trim();
+    let title = t.trim_matches(|c| c == '#' || c == ' ');
     section.blocks.push(text::subheading(title));
 }
 

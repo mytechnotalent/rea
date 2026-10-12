@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v3.0.0
+# Reverse Engineering Assistant (REA) v3.1.0
 
 Autonomous Reverse Engineering Framework
 
@@ -15,6 +15,17 @@ rea suspect
 Writes `re-suspect.md` and `re-suspect.pdf` next to the target. That's the whole workflow.
 
 **Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and deterministic engine. Built in 100% pure Rust.
+
+<br>
+
+# New in v3.1.0
+
+REA v3.1.0 delivers major enhancements across binary disassembly, dynamic hardware triage, and report quality:
+
+- **Streamlined Assembly Walkthrough**: Provides clean, full raw assembler listings followed by natural-language functional summaries and dual code/data literal pool analysis, eliminating redundant opcode table bloat.
+- **Dynamic Microcontroller & Hardware Analysis**: Fully dynamic microcontroller identification and peripheral analysis derived directly from deterministic vector tables, memory maps, and MMIO accesses—with zero hardcoded MCU tables.
+- **Strict Opcode Noise Filtering**: Advanced semantic string filtering (`is_plausible`) differentiates authentic text and format specifiers from accidental pseudo-ASCII machine code fragments (`FKFAF`, `BFKFQF`), eliminating string hallucinations.
+- **Model Context Protocol (MCP) Server**: Turnkey integration with modern AI coding assistants (Claude Code, Cursor, Windsurf, Gemini CLI, OpenCode) through the built-in MCP server.
 
 <br>
 

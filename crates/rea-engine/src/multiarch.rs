@@ -113,6 +113,35 @@ fn thumb(big_endian: bool) -> SleighArch {
     }
 }
 
+/// Extracts absolute addresses from instruction operands.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text, such as `ldr r0,[0x10000244]`.
+///
+/// # Returns
+///
+/// Every `0x...` operand of at least 4 hex digits.
+fn text_addresses(text: &str) -> Vec<u64> {
+    text.match_indices("0x")
+        .filter_map(|(i, _)| operand_at(&text[i + 2..]))
+        .collect()
+}
+
+/// Parses one hexadecimal operand of at least 4 digits.
+///
+/// # Arguments
+///
+/// * `digits` - Text immediately after a `0x` prefix.
+///
+/// # Returns
+///
+/// The address when at least 4 hex digits follow.
+fn operand_at(digits: &str) -> Option<u64> {
+    let hex: String = digits.chars().take_while(char::is_ascii_hexdigit).collect();
+    (hex.len() >= 4).then(|| u64::from_str_radix(&hex, 16).ok()).flatten()
+}
+
 /// Disassembles a non-x86 binary by recursive descent using SLEIGH.
 ///
 /// # Arguments
@@ -455,6 +484,7 @@ impl<'a> Walker<'a> {
         self.result.instructions += 1;
         function.instructions += 1;
         let text = crate::semantics::format_imm_hex(&decoded.text);
+        function.references.extend(text_addresses(&text));
         let (kind, discussion) = crate::semantics::discuss(self.arch, address, &text);
         function
             .lines
@@ -469,13 +499,11 @@ impl<'a> Walker<'a> {
     /// * `function` - Function being built.
     /// * `blocks` - Queue of further block starts.
     fn follow(&mut self, decoded: &Decoded, function: &mut Function, blocks: &mut Vec<u64>) {
-        for raw in &decoded.targets {
-            self.route(
-                code_address(*raw, self.interworking),
-                decoded.flow,
-                function,
-                blocks,
-            );
+        let flow = decoded.flow;
+        let targets: Vec<u64> =
+            decoded.targets.iter().map(|t| code_address(*t, self.interworking)).collect();
+        for target in targets {
+            self.route(target, flow, function, blocks);
         }
     }
 

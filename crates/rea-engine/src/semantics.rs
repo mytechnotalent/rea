@@ -353,8 +353,10 @@ fn discuss_load(text: &str) -> String {
 fn discuss_general_load(text: &str) -> String {
     if is_mmio_text(text) {
         "Reads hardware status or data from memory-mapped peripheral I/O register.".into()
+    } else if text.contains("[0x") {
+        "Loads literal pool constant or target address pointer into destination register.".into()
     } else {
-        "Loads memory value into register.".into()
+        "Loads memory value into destination register.".into()
     }
 }
 
@@ -619,25 +621,86 @@ fn category_discussion(category: &str, text: &str) -> String {
         "Memory Store" => discuss_store(text),
         "Control Flow" => discuss_branch(text),
         "Arithmetic / Logic" => discuss_alu(text),
+        "Register Move" => discuss_move(text),
         _ => discuss_other_category(category),
     }
 }
 
-/// Discusses register moves or general system operations.
+/// Discusses register moves annotating immediate values when present.
 ///
 /// # Arguments
 ///
-/// * `category` - Functional category.
+/// * `text` - Instruction text.
 ///
 /// # Returns
 ///
 /// Discussion string.
-fn discuss_other_category(category: &str) -> String {
-    if category == "Register Move" {
-        "Copies immediate value or register into destination register.".into()
+fn discuss_move(text: &str) -> String {
+    if let Some(imm) = parse_imm_dec(text) {
+        format!("Copies immediate value {imm} into destination register.")
     } else {
-        "Executes hardware instruction or processor control operation.".into()
+        "Copies register value into destination register.".into()
     }
+}
+
+/// Extracts immediate operand text and its decimal value if present.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// Formatted string like `0x2b (decimal 43)` when found.
+#[must_use]
+pub fn parse_imm_dec(text: &str) -> Option<String> {
+    let start = text.find('#')? + 1;
+    let raw: String = text[start..].chars().take_while(is_imm_char).collect();
+    let val = parse_hex_or_dec(&raw)?;
+    Some(format!("{raw} (decimal {val})"))
+}
+
+/// Reports whether a character belongs to an immediate token.
+///
+/// # Arguments
+///
+/// * `c` - Character to test.
+///
+/// # Returns
+///
+/// `true` for hex digits or 'x'.
+fn is_imm_char(c: &char) -> bool {
+    c.is_ascii_hexdigit() || *c == 'x'
+}
+
+/// Parses an immediate number string in hex or decimal.
+///
+/// # Arguments
+///
+/// * `raw` - Number string.
+///
+/// # Returns
+///
+/// Parsed 64-bit unsigned integer.
+fn parse_hex_or_dec(raw: &str) -> Option<u64> {
+    if let Some(hex) = raw.strip_prefix("0x") {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        raw.parse().ok()
+    }
+}
+
+/// Discusses general system operations.
+///
+/// # Arguments
+///
+/// * `_category` - Functional category.
+///
+/// # Returns
+///
+/// Discussion string.
+fn discuss_other_category(_category: &str) -> String {
+    "Executes hardware instruction or processor control operation.".into()
 }
 
 /// Analyzes a 32-bit data word evaluating data and candidate instruction interpretations.
@@ -708,10 +771,10 @@ fn format_data_val(val: u32) -> String {
 ///
 /// Hardware description if matched.
 fn check_hw_data_val(val: u32) -> Option<String> {
-    if (0xd000_0000..=0xd000_0200).contains(&val) {
-        Some(format!("0x{val:08x} [RP2350 SIO Base Register]"))
-    } else if (0x4000_0000..=0x5008_0000).contains(&val) {
-        Some(format!("0x{val:08x} [Hardware Peripheral MMIO]"))
+    if (0x4000_0000..=0xdfff_ffff).contains(&val) {
+        Some(format!("0x{val:08x} [Peripheral Register / MMIO Base]"))
+    } else if (0xe000_0000..=0xe00f_ffff).contains(&val) {
+        Some(format!("0x{val:08x} [System Control / NVIC MMIO]"))
     } else {
         None
     }
@@ -763,10 +826,10 @@ fn format_data_discussion(val: u32) -> String {
 ///
 /// Hardware discussion if matched.
 fn check_hw_data_disc(val: u32) -> Option<String> {
-    if (0xd000_0000..=0xd000_0200).contains(&val) {
-        Some("Literal pool holds base address of RP2350 Single-Cycle IO peripheral block.".into())
-    } else if (0x4000_0000..=0x5008_0000).contains(&val) {
+    if (0x4000_0000..=0xdfff_ffff).contains(&val) {
         Some("Literal pool holds hardware peripheral MMIO control address.".into())
+    } else if (0xe000_0000..=0xe00f_ffff).contains(&val) {
+        Some("Literal pool holds system control or interrupt controller MMIO address.".into())
     } else {
         None
     }
@@ -804,7 +867,11 @@ fn check_mem_data_disc(val: u32) -> String {
 pub fn summarize_function(func: &Function) -> String {
     let mut parts = vec![func_intro(func)];
     describe_calls(func, &mut parts);
+    describe_loops(func, &mut parts);
+    describe_imports(func, &mut parts);
+    describe_mmio(func, &mut parts);
     describe_stack_vars(func, &mut parts);
+    describe_data_pools(func, &mut parts);
     parts.join(" ")
 }
 
@@ -834,6 +901,78 @@ fn describe_calls(func: &Function, parts: &mut Vec<String>) {
         parts.push("Operates as a leaf function with no outbound subroutine calls.".into());
     } else {
         parts.push(format_call_targets(func));
+    }
+}
+
+/// Appends description of backward-branch loops in the function.
+///
+/// # Arguments
+///
+/// * `func` - Function being summarized.
+/// * `parts` - Output sentence parts.
+fn describe_loops(func: &Function, parts: &mut Vec<String>) {
+    let loops = func.lines.iter().filter(|l| is_backward_branch(l)).count();
+    if loops > 0 {
+        let noun = if loops == 1 { "loop" } else { "loops" };
+        parts.push(format!(
+            "Contains {loops} backward-branch {noun}, indicating iteration."
+        ));
+    }
+}
+
+/// Reports whether a line is a branch to an earlier address (a loop).
+///
+/// # Arguments
+///
+/// * `line` - Instruction line to inspect.
+///
+/// # Returns
+///
+/// `true` when the instruction branches backward.
+fn is_backward_branch(line: &crate::disasm::InstructionLine) -> bool {
+    let first = line.text.chars().next().unwrap_or_default();
+    let branched = "bj".contains(first) || line.text.starts_with("cb");
+    branched && branch_target(&line.text).is_some_and(|t| t < line.address)
+}
+
+/// Extracts a hexadecimal branch target from instruction text.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// The parsed target address, when present.
+fn branch_target(text: &str) -> Option<u64> {
+    let start = text.find("0x")?;
+    let hex: String = text[start + 2..].chars().take_while(char::is_ascii_hexdigit).collect();
+    u64::from_str_radix(&hex, 16).ok()
+}
+
+/// Appends description of imported APIs used by the function.
+///
+/// # Arguments
+///
+/// * `func` - Function being summarized.
+/// * `parts` - Output sentence parts.
+fn describe_imports(func: &Function, parts: &mut Vec<String>) {
+    if !func.imports.is_empty() {
+        let names: Vec<&str> = func.imports.iter().take(4).map(String::as_str).collect();
+        parts.push(format!("Calls imported APIs: {}.", names.join(", ")));
+    }
+}
+
+/// Appends description of memory-mapped hardware accesses in the function.
+///
+/// # Arguments
+///
+/// * `func` - Function being summarized.
+/// * `parts` - Output sentence parts.
+fn describe_mmio(func: &Function, parts: &mut Vec<String>) {
+    let mmio = func.references.iter().any(|a| (0x4000_0000..0x6000_0000).contains(a));
+    if mmio {
+        parts.push("Accesses memory-mapped hardware peripheral registers.".into());
     }
 }
 
@@ -867,6 +1006,22 @@ fn describe_stack_vars(func: &Function, parts: &mut Vec<String>) {
         parts.push("Allocates and manipulates local variables within its stack frame.".into());
     } else {
         parts.push("Maintains state predominantly within processor registers.".into());
+    }
+}
+
+/// Appends description of embedded data and literal pools used by the function.
+///
+/// # Arguments
+///
+/// * `func` - Function being summarized.
+/// * `parts` - Output sentence parts.
+fn describe_data_pools(func: &Function, parts: &mut Vec<String>) {
+    let count = func.data_pools.len();
+    if count > 0 {
+        let noun = if count == 1 { "entry" } else { "entries" };
+        parts.push(format!(
+            "References {count} embedded data or literal-pool {noun}."
+        ));
     }
 }
 

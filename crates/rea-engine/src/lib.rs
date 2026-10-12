@@ -76,6 +76,9 @@ mod macho;
 /// Multi-architecture disassembly via SLEIGH.
 pub mod multiarch;
 
+/// Behavioral narrative synthesis from recovered code.
+pub mod narrative;
+
 /// Format-neutral binary model.
 pub mod model;
 

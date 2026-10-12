@@ -226,6 +226,168 @@ impl Scanner {
     }
 }
 
+/// Reports whether an ASCII character is a vowel.
+///
+/// # Arguments
+///
+/// * `c` - Character to inspect.
+///
+/// # Returns
+///
+/// `true` for ASCII vowels in either case.
+fn is_vowel(c: char) -> bool {
+    matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'A' | 'E' | 'I' | 'O' | 'U')
+}
+
+/// Reports whether text resembles a dotted version number.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text.
+///
+/// # Returns
+///
+/// `true` when segments are numeric with at least one dot.
+fn is_version(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() > 1 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Reports whether letters and digits interleave unnaturally as in opcode noise.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text.
+///
+/// # Returns
+///
+/// `true` for noise patterns like `b3K4I` or `O6L`.
+fn has_interleaved_digits(s: &str) -> bool {
+    let b = s.as_bytes();
+    if s.starts_with("0x") || s.starts_with("boot") || s.starts_with("pico") {
+        return false;
+    }
+    b.windows(4).any(|w| (w[0].is_ascii_alphabetic() && w[1].is_ascii_digit() && w[2].is_ascii_alphabetic()) || (w[0].is_ascii_digit() && w[1].is_ascii_alphabetic() && w[2].is_ascii_digit()))
+}
+
+/// Reports whether a string containing percent signs is a plausible format string.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text containing `%`.
+///
+/// # Returns
+///
+/// `true` for genuine format strings like `age: %d`.
+fn is_valid_format_str(s: &str) -> bool {
+    let Some(idx) = s.find('%') else { return false };
+    let spec = s[idx + 1..].chars().find(|c| !c.is_ascii_digit() && !matches!(c, '-' | '+' | ' ' | '#' | '.'));
+    let valid_spec = spec.is_some_and(|c| matches!(c, 'd' | 'i' | 'u' | 'o' | 'x' | 'X' | 'f' | 's' | 'c' | 'p'));
+    let pfx = s[..idx].trim_matches(|c: char| !c.is_ascii_alphabetic());
+    valid_spec && (pfx.is_empty() || pfx.chars().any(is_vowel))
+}
+
+/// Reports whether text contains an unnatural run of four or more consonants.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text.
+///
+/// # Returns
+///
+/// `true` when a consonant sequence reaches four characters.
+fn has_excessive_consonants(s: &str) -> bool {
+    let mut run = 0;
+    for c in s.chars() {
+        run = if c.is_ascii_alphabetic() && !is_vowel(c) { run + 1 } else { 0 };
+        if run >= 4 { return true; }
+    }
+    false
+}
+
+/// Reports whether a single letter dominates the text as typical of opcode repetitions.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text.
+/// * `alphas` - Total alphabetic count.
+///
+/// # Returns
+///
+/// `true` when one letter appears three or more times and forms at least 40% of letters.
+fn has_repeated_letter(s: &str, alphas: usize) -> bool {
+    let mut counts = [0u8; 26];
+    for c in s.chars().filter(|c| c.is_ascii_alphabetic()) {
+        counts[(c.to_ascii_lowercase() as usize) - ('a' as usize)] += 1;
+    }
+    counts.iter().any(|&cnt| cnt >= 3 && usize::from(cnt) * 5 >= alphas * 2)
+}
+
+/// Reports whether unexpected symbols appear inside words.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text.
+///
+/// # Returns
+///
+/// `true` when internal noise characters like `@`, `!`, `+`, `*`, `)` appear.
+fn has_symbol_noise(s: &str) -> bool {
+    let clean = s.trim_matches(|c| matches!(c, '*' | '-' | '=' | '#' | '"' | '\''));
+    let inner = clean.trim_matches(|c| matches!(c, ' ' | '_' | '-' | '.' | ':' | '/' | ','));
+    inner.chars().any(|c| matches!(c, '@' | '!' | '+' | '*' | ')' | '(' | '`' | '~' | '^' | '&' | '|' | '<' | '>' | ';' | '"' | '\''))
+}
+
+/// Reports whether letter casing flips unnaturally back and forth.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text.
+/// * `alphas` - Total alphabetic count.
+///
+/// # Returns
+///
+/// `true` for alternating casing noise like `aKiCa`.
+fn has_alternating_case(s: &str, alphas: usize) -> bool {
+    let letters: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    let flips = letters.windows(2).filter(|w| w[0].is_ascii_uppercase() != w[1].is_ascii_uppercase()).count();
+    flips >= 3 && flips * 2 >= alphas
+}
+
+/// Reports whether the text contains at least one word with a vowel.
+///
+/// # Arguments
+///
+/// * `s` - Candidate text.
+///
+/// # Returns
+///
+/// `true` when a token contains vowels and normal characters.
+fn has_valid_word(s: &str) -> bool {
+    s.split(|c: char| matches!(c, ' ' | '_' | '-' | '.' | ':' | '/' | ','))
+        .any(|w| w.len() >= 2 && w.chars().any(is_vowel))
+}
+
+/// Reports whether an extracted string is plausible text rather than opcode noise.
+///
+/// # Arguments
+///
+/// * `s` - Candidate string text.
+///
+/// # Returns
+///
+/// `true` when the string has natural formatting, words, and vowels.
+#[must_use]
+pub fn is_plausible(s: &str) -> bool {
+    let t = s.trim();
+    if t.len() < 3 || has_interleaved_digits(t) || has_symbol_noise(t) { return false; }
+    if is_version(t) { return true; }
+    if t.contains('%') { return is_valid_format_str(t); }
+    let alphas = t.chars().filter(|c| c.is_ascii_alphabetic()).count();
+    let vowels = t.chars().filter(|c| is_vowel(*c)).count();
+    alphas >= 3 && vowels > 0 && vowels * 4 >= alphas && !has_excessive_consonants(t) && !has_repeated_letter(t, alphas) && !has_alternating_case(t, alphas) && has_valid_word(t)
+}
+
 #[cfg(test)]
 mod tests {
     // Import all parent module items
@@ -264,4 +426,24 @@ mod tests {
         assert_eq!(printable(0x09), Some('\t'));
         assert_eq!(printable(0x7f), None);
     }
+
+    /// Verifies that plausible text strings pass validation.
+    #[test]
+    fn test_plausible_strings_accepted() {
+        assert!(is_plausible("age: %d"));
+        assert!(is_plausible("*** PANIC ***"));
+        assert!(is_plausible("2.2.0"));
+        assert!(is_plausible("pico2"));
+    }
+
+    /// Verifies that opcode sequence noise is rejected.
+    #[test]
+    fn test_opcode_noise_rejected() {
+        assert!(!is_plausible("FKFAF  "));
+        assert!(!is_plausible("BFKFQF  "));
+        assert!(!is_plausible("RFKFAF  "));
+        assert!(!is_plausible("b3K4I"));
+        assert!(!is_plausible("aKiCa"));
+    }
 }
+

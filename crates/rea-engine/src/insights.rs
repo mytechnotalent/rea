@@ -333,13 +333,51 @@ fn evaluate(
     disassembly: &Disassembly,
     annotator: &Annotator,
 ) -> KeyFunction {
-    let mut reasons = entry_reason(function.address == binary.entry);
-    reasons.extend(api_reasons(function));
-    reasons.extend(indicator_reasons(function, annotator));
-    let score = weight(reasons.len());
+    let mut reasons = collect_reasons(function, binary.entry, annotator);
+    let score = score_reasons(&reasons);
     reasons.truncate(MAX_REASONS);
     let name = disassembly.name_of(function.address);
     KeyFunction::new(function.address, name, score, reasons)
+}
+
+/// Collects all relevance reasons for a function.
+///
+/// # Arguments
+///
+/// * `func` - Function to evaluate.
+/// * `entry` - Program entry address.
+/// * `annotator` - Symbol annotator.
+///
+/// # Returns
+///
+/// List of discovered reasons.
+fn collect_reasons(func: &Function, entry: u64, annotator: &Annotator) -> Vec<String> {
+    let mut r = loop_reasons(func, annotator);
+    r.extend(entry_reason(func.address == entry));
+    r.extend(api_reasons(func));
+    r.extend(indicator_reasons(func, annotator));
+    r.extend(string_reasons(func, annotator));
+    r
+}
+
+/// Computes prioritized relevance score from discovered reasons.
+///
+/// # Arguments
+///
+/// * `reasons` - Discovered function reasons.
+///
+/// # Returns
+///
+/// Weighted score, boosted for main loops.
+fn score_reasons(reasons: &[String]) -> u32 {
+    let base = weight(reasons.len());
+    if reasons.iter().any(|r| r.starts_with("Main application loop (prints")) {
+        return base.saturating_add(100);
+    }
+    if reasons.iter().any(|r| r.starts_with("Main application loop")) {
+        return base.saturating_add(50);
+    }
+    base
 }
 
 /// Converts a reason count into a relevance score.
@@ -421,6 +459,126 @@ fn indicator_reasons(function: &Function, annotator: &Annotator) -> Vec<String> 
     let references = function.references.iter();
     let found = references.filter_map(|a| annotator.indicator(*a));
     found.map(|i| format!("References {i}")).collect()
+}
+
+/// Explains strings a function references directly or via literal pools.
+///
+/// # Arguments
+///
+/// * `function` - Function to inspect.
+/// * `annotator` - Symbol lookup.
+///
+/// # Returns
+///
+/// Reasons for referenced strings.
+fn string_reasons(function: &Function, annotator: &Annotator) -> Vec<String> {
+    let direct = function.references.iter().filter_map(|a| annotator.strings.get(a));
+    let pool = function.data_pools.iter().filter_map(|p| pool_string(p, annotator));
+    let valid = direct.chain(pool).filter(|s| crate::strings::is_plausible(s));
+    let mut all: Vec<String> = valid.map(|s| format!("References text {}", quote(s))).collect();
+    all.dedup();
+    all
+}
+
+/// Resolves a string referenced inside a literal pool entry.
+///
+/// # Arguments
+///
+/// * `entry` - Data pool entry.
+/// * `annotator` - Symbol lookup.
+///
+/// # Returns
+///
+/// Referenced string text if found.
+fn pool_string<'a>(entry: &crate::disasm::DataEntry, annotator: &'a Annotator) -> Option<&'a String> {
+    let target = entry.as_data.split('[').next()?.trim();
+    let hex = target.strip_prefix("0x")?;
+    let addr = u64::from_str_radix(hex, 16).ok()?;
+    annotator.strings.get(&addr)
+}
+
+/// Finds the first format string referenced by a function.
+///
+/// # Arguments
+///
+/// * `function` - Function to inspect.
+/// * `annotator` - Symbol lookup.
+///
+/// # Returns
+///
+/// Referenced format string text if present.
+fn find_format_string(function: &Function, annotator: &Annotator) -> Option<String> {
+    let direct = function.references.iter().filter_map(|a| annotator.strings.get(a));
+    let pool = function.data_pools.iter().filter_map(|p| pool_string(p, annotator));
+    direct.chain(pool).find(|s| s.contains('%')).cloned()
+}
+
+/// Reports whether the function does not terminate in a breakpoint trap loop.
+///
+/// # Arguments
+///
+/// * `function` - Function to inspect.
+///
+/// # Returns
+///
+/// `true` if the second-to-last instruction is not a trap.
+fn is_not_trap(function: &Function) -> bool {
+    let len = function.lines.len();
+    if len < 2 {
+        return true;
+    }
+    let prev = &function.lines[len - 2].text;
+    !prev.starts_with("bkpt") && !prev.starts_with("udf") && !prev.starts_with("wfi")
+}
+
+/// Explains main loop self-branching behavior.
+///
+/// # Arguments
+///
+/// * `function` - Function to inspect.
+/// * `annotator` - Symbol lookup.
+///
+/// # Returns
+///
+/// Reason when function is a main loop candidate.
+fn loop_reasons(function: &Function, annotator: &Annotator) -> Vec<String> {
+    let has_loop = function.lines.last().is_some_and(|l| is_self_loop(l, function.address));
+    if !has_loop || !is_not_trap(function) {
+        return Vec::new();
+    }
+    if let Some(fmt) = find_format_string(function, annotator) {
+        return vec![format!("Main application loop (prints {})", quote(&fmt))];
+    }
+    (!function.calls.is_empty()).then(|| "Main application loop (infinite self-branching execution)".into()).into_iter().collect()
+}
+
+/// Reports whether an instruction line is a backward branch into the function.
+///
+/// # Arguments
+///
+/// * `line` - Instruction line.
+/// * `entry` - Function entry address.
+///
+/// # Returns
+///
+/// `true` for branches to addresses >= entry and < instruction address.
+fn is_self_loop(line: &crate::disasm::InstructionLine, entry: u64) -> bool {
+    let target = line.text.strip_prefix("b ").and_then(strip_hex);
+    target.is_some_and(|t| t >= entry && t < line.address)
+}
+
+/// Parses a hexadecimal address token.
+///
+/// # Arguments
+///
+/// * `token` - Token text.
+///
+/// # Returns
+///
+/// Parsed address when valid.
+fn strip_hex(token: &str) -> Option<u64> {
+    let hex = token.trim().strip_prefix("0x")?;
+    u64::from_str_radix(hex, 16).ok()
 }
 
 /// Attaches an annotated listing to a key function.

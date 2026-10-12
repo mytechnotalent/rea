@@ -37,20 +37,33 @@ use serde_json::json;
 
 /// System prompt for the analyst agent proposing hypotheses.
 const ANALYST_PROMPT: &str = "You are a principal binary reverse engineering analyst. \
-Given deterministic facts, propose in-depth technical findings: (1) Binary Purpose & Role, \
-(2) Threat Surface & Vulnerabilities (cite hardcoded credentials, command execution, weak hashing), \
-(3) Architecture. Every assertion must cite the provided facts.";
+Given deterministic facts, memory maps, vector tables, strings, and recovered disassembly listings, \
+conduct an exhaustive analysis: \
+(1) Identify the exact microcontroller / SoC platform (e.g., Raspberry Pi RP2040/RP2350, STM32, ESP32, nRF52, etc.) \
+and hardware architecture from memory ranges, vector tables, and MMIO peripheral access. \
+(2) Trace program execution: boot sequence, silicon/clock init, peripheral configuration (GPIO, UART, SIO, Timers), \
+and core application control loops (strictly ground your main function in the identified main loop candidate with formatted prints). \
+(3) Explain variable storage (.rodata, .data, .bss, registers) and compiler optimizations (dead-store elimination, \
+constant folding/propagation where immediate operands replace stack variables in registers). \
+(4) Detail binary patching & reverse engineering vectors: exact instruction, file offset, patch values, and hardware flashing procedures. \
+Do not hallucinate meaning for accidental opcode byte sequences (e.g., FKFAF, BFKFQF, RFKFAF). Only analyze authentic application strings.";
 
 /// System prompt for the reviewer agent auditing proposals.
 const REVIEWER_PROMPT: &str = "You are a strict technical peer reviewer. \
-Verify the Analyst's hypotheses against the deterministic evidence. Eliminate unsupported claims \
-and verify CWE classifications.";
+Verify the Analyst's hypotheses against the deterministic evidence. Eliminate unsupported claims, \
+verify microcontroller identification against the vector table and memory map, and ensure disassembly citations are accurate.";
 
 /// System prompt for the adjudicator agent synthesizing final output.
 const ADJUDICATOR_PROMPT: &str = "You are the lead security adjudicator. \
-Synthesize the findings and peer review into an authoritative reverse engineering assessment \
-with markdown sections: ## Executive Overview, ## Architecture Analysis, \
-## Vulnerability Assessment, ## Security Recommendations.";
+Synthesize findings into an authoritative reverse engineering report matching professional malware/embedded research with markdown sections: \
+### Executive Overview\n\
+### Architecture & Microcontroller Analysis\n\
+### Program Logic & Control Flow\n\
+### Variable Storage & Compiler Optimization\n\
+### Binary Patching & Exploitation Vectors\n\
+### Security Recommendations\n\
+Do not duplicate heading markers. Ground every finding in the provided DETERMINISTIC FACT and disassembly listings. Identify the exact microcontroller model and hardware peripherals from the evidence. \
+Never cite or hallucinate about opcode byte noise fragments (such as FKFAF, BFKFQF, RFKFAF). Only reference genuine application strings.";
 
 /// Reads the API key from environment variables.
 ///
@@ -297,6 +310,70 @@ fn append_facts(out: &mut String, a: &Analysis) {
     }
 }
 
+/// Reports whether an extracted string is plausible text rather than opcode noise.
+///
+/// Appends extracted printable strings to evidence text.
+///
+/// # Arguments
+///
+/// * `out` - Destination string.
+/// * `a` - Completed analysis.
+fn append_strings_evidence(out: &mut String, a: &Analysis) {
+    let valid = a.strings.iter().filter(|s| rea_engine::strings::is_plausible(&s.text));
+    for s in valid.take(25) {
+        let _ = writeln!(out, "STRING: offset={:#x} text={:?}", s.offset, s.text);
+    }
+}
+
+/// Appends disassembly and key function listings to evidence text.
+///
+/// # Arguments
+///
+/// * `out` - Destination string.
+/// * `a` - Completed analysis.
+fn append_code_evidence(out: &mut String, a: &Analysis) {
+    let Some(code) = &a.disassembly else { return };
+    let _ = writeln!(
+        out,
+        "CODE RECOVERY: {} functions, {} instructions recovered ({}-bit).",
+        code.functions.len(),
+        code.instructions,
+        code.bitness
+    );
+    for key in a.key_functions.iter().take(4) {
+        append_key_func_listing(out, key);
+    }
+}
+
+/// Appends one key function's listing to evidence text.
+///
+/// # Arguments
+///
+/// * `out` - Destination string.
+/// * `key` - Key function.
+fn append_key_func_listing(out: &mut String, key: &rea_engine::insights::KeyFunction) {
+    let _ = writeln!(out, "KEY FUNCTION: {} at {:#x}", key.name, key.address);
+    for line in key.listing.iter().take(20) {
+        let _ = writeln!(out, "  {line}");
+    }
+}
+
+/// Appends deterministic behavioral narrative to evidence text.
+///
+/// # Arguments
+///
+/// * `out` - Destination string.
+/// * `a` - Completed analysis.
+fn append_story_evidence(out: &mut String, a: &Analysis) {
+    let story = rea_engine::narrative::detailed_program_story(a);
+    let all = [story.boot, story.main_logic, story.optimization, story.patching];
+    for section in all {
+        for p in section {
+            let _ = writeln!(out, "DETERMINISTIC FACT: {p}");
+        }
+    }
+}
+
 /// Compiles deterministic engine facts into an evidence dossier.
 ///
 /// # Arguments
@@ -311,6 +388,9 @@ fn build_evidence(a: &Analysis) -> String {
     append_identity(&mut out, a);
     append_facts(&mut out, a);
     append_capabilities(&mut out, a);
+    append_strings_evidence(&mut out, a);
+    append_code_evidence(&mut out, a);
+    append_story_evidence(&mut out, a);
     append_firmware(&mut out, a);
     out
 }

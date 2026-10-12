@@ -31,6 +31,7 @@ use std::collections::HashMap;
 
 // Import crate items
 use crate::{
+    detect::Format,
     disasm::{Disassembly, Function, InstructionLine},
     model::Binary,
     semantics,
@@ -343,8 +344,8 @@ fn pin_of(func: &Function) -> Option<u64> {
 ///
 /// A sentence when MMIO addresses are referenced.
 fn mmio_sentence(func: &Function) -> Option<String> {
-    let mmio = func.references.iter().find(|&&a| a >= 0x4000_0000 && a < 0xf000_0000)?;
-    Some(format!("It accesses memory-mapped peripheral registers at {:#x}.", mmio))
+    let mmio = func.references.iter().find(|&&a| (0x4000_0000..0xf000_0000).contains(&a))?;
+    Some(format!("It accesses memory-mapped peripheral registers at {mmio:#x}."))
 }
 
 /// Sentences describing loops: infinite main loops and busy-wait delays.
@@ -508,11 +509,8 @@ fn shape_sentence(code: &Disassembly, func: &Function) -> String {
         return "It calls nothing else.".to_string();
     }
     let names: Vec<String> = func.calls.iter().take(3).map(|a| code.name_of(*a)).collect();
-    format!(
-        "It delegates to {} ({} callees).",
-        names.join(", "),
-        func.calls.len()
-    )
+    let (s, count) = (names.join(", "), func.calls.len());
+    format!("It delegates to {s} ({count} callees).")
 }
 
 /// Escapes a string for inline display.
@@ -541,6 +539,23 @@ pub struct DetailedStory {
     pub patching: Vec<String>,
 }
 
+/// Synthesizes the core narrative sections for a valid binary and code.
+///
+/// # Arguments
+///
+/// * `ev` - Evidence resolver.
+/// * `code` - Disassembly result.
+/// * `main_func` - Identified main function.
+///
+/// # Returns
+///
+/// Detailed story structure.
+fn assemble_story(ev: &Evidence<'_>, code: &Disassembly, main_func: Option<&Function>) -> DetailedStory {
+    let (boot, main_logic) = (boot_narrative(ev.binary), main_logic_narrative(ev, code, main_func));
+    let (optimization, patching) = (optimization_narrative(ev, main_func), patching_narrative(ev.binary, main_func));
+    DetailedStory { boot, main_logic, optimization, patching }
+}
+
 /// Builds the comprehensive, structured story of what the program does.
 ///
 /// # Arguments
@@ -557,11 +572,7 @@ pub fn detailed_program_story(analysis: &Analysis) -> DetailedStory {
     };
     let ev = Evidence::new(binary, &analysis.strings);
     let main_func = find_main_func(&ev, code);
-    let boot = boot_narrative(binary);
-    let main_logic = main_logic_narrative(&ev, code, main_func);
-    let optimization = optimization_narrative(&ev, main_func);
-    let patching = patching_narrative(binary, main_func);
-    DetailedStory { boot, main_logic, optimization, patching }
+    assemble_story(&ev, code, main_func)
 }
 
 /// Selects the primary main application function from recovered code.
@@ -613,11 +624,91 @@ pub fn program_story(analysis: &Analysis) -> Vec<String> {
 ///
 /// Boot narrative sentences.
 fn boot_narrative(binary: &Binary) -> Vec<String> {
+    match binary.format {
+        Format::Pe => pe_boot_sentences(binary),
+        Format::Elf => elf_boot_sentences(binary),
+        Format::MachO | Format::MachOUniversal => macho_boot_sentences(binary),
+        Format::UImage => uimage_boot_sentences(binary),
+        _ => raw_boot_sentences(binary),
+    }
+}
+
+/// Generates boot and loader sentences for Windows PE executables.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
+/// # Returns
+///
+/// Loader and runtime startup sentences.
+fn pe_boot_sentences(binary: &Binary) -> Vec<String> {
     let arch = &binary.arch_name;
-    let s1 = format!(
-        "On {arch}, the hardware loads the initial stack pointer from the vector table at {:#x} and jumps to the reset handler at {:#x}.",
-        binary.image_base, binary.entry
-    );
+    let s1 = format!("Under Windows {arch}, the operating system loader maps executable image sections at {:#x} and transfers control to the process entry point at {:#x}.", binary.image_base, binary.entry);
+    let s2 = "The C runtime startup routines initialize the process environment, register Structured Exception Handling (SEH) or TLS callbacks, initialize standard I/O, and transfer execution to the application entry.".to_string();
+    vec![s1, s2]
+}
+
+/// Generates boot and loader sentences for ELF executables.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
+/// # Returns
+///
+/// Kernel loader and runtime startup sentences.
+fn elf_boot_sentences(binary: &Binary) -> Vec<String> {
+    let arch = &binary.arch_name;
+    let s1 = format!("Under POSIX/Linux {arch}, the kernel and dynamic linker map ELF segments at {:#x} and transfer control to the program entry point at {:#x}.", binary.image_base, binary.entry);
+    let s2 = "The dynamic loader and C runtime startup routines (`_start`) initialize the process stack frame, resolve dynamic symbols, initialize global constructors, and pass execution to `main`.".to_string();
+    vec![s1, s2]
+}
+
+/// Generates boot and loader sentences for Mach-O executables.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
+/// # Returns
+///
+/// Dynamic loader and runtime startup sentences.
+fn macho_boot_sentences(binary: &Binary) -> Vec<String> {
+    let arch = &binary.arch_name;
+    let s1 = format!("Under Darwin/macOS {arch}, the dynamic linker (`dyld`) maps Mach-O load commands and segments at {:#x} and initiates execution at entry point {:#x}.", binary.image_base, binary.entry);
+    let s2 = "Runtime startup resolves chained fixups, binds external dynamic library symbols, runs initializers, and transfers control to the main application routine.".to_string();
+    vec![s1, s2]
+}
+
+/// Generates boot and loader sentences for U-Boot legacy images.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
+/// # Returns
+///
+/// U-Boot loader and kernel initialization sentences.
+fn uimage_boot_sentences(binary: &Binary) -> Vec<String> {
+    let arch = &binary.arch_name;
+    let s1 = format!("Under U-Boot bootloader for {arch}, the legacy image container is loaded at {:#x} and the operating system kernel is unpacked to entry point {:#x}.", binary.image_base, binary.entry);
+    let s2 = "The bootloader passes hardware registers and boot arguments to the kernel entry point, which initializes system memory management, mounts the embedded root filesystem, and launches init.".to_string();
+    vec![s1, s2]
+}
+
+/// Generates boot and silicon initialization sentences for raw/embedded firmware.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
+/// # Returns
+///
+/// Hardware reset and silicon startup sentences.
+fn raw_boot_sentences(binary: &Binary) -> Vec<String> {
+    let arch = &binary.arch_name;
+    let s1 = format!("On {arch}, the hardware loads the initial stack pointer from the vector table at {:#x} and jumps to the reset handler at {:#x}.", binary.image_base, binary.entry);
     let s2 = "The reset handler performs silicon initialization, configures system clocks, copies initialized data from Flash to SRAM, zeroes uninitialized BSS memory, and transfers control to the main application.".to_string();
     vec![s1, s2]
 }
@@ -661,7 +752,7 @@ fn main_logic_narrative(
 fn main_func_sentences(ev: &Evidence<'_>, code: &Disassembly, func: &Function) -> Vec<String> {
     let name = code.name_of(func.address);
     let mut s = vec![format!(
-        "Application function `{name}` at {:#x} implements the core firmware lifecycle.",
+        "Application function `{name}` at {:#x} implements the core program execution lifecycle.",
         func.address
     )];
     s.extend(init_call_sentence(code, func));
@@ -685,6 +776,22 @@ fn init_call_sentence(code: &Disassembly, func: &Function) -> Option<String> {
     Some(format!("Before entering the loop, it invokes `{name}` to initialize standard I/O and peripheral drivers."))
 }
 
+/// Formats the print sentence inside the loop body if formatted output exists.
+///
+/// # Arguments
+///
+/// * `ev` - Evidence resolver.
+/// * `func` - Main function.
+///
+/// # Returns
+///
+/// Sentence describing immediate formatted print if found.
+fn loop_print_output(ev: &Evidence<'_>, func: &Function) -> Option<String> {
+    let fmt = ev.strings_of(func).into_iter().find(|s| s.contains('%'))?;
+    let val = func.lines.iter().find_map(|l| semantics::parse_imm_dec(&l.text))?;
+    Some(format!("Inside the loop, it loads immediate value {val} into parameter register r1 and prints \"{}\" via formatted serial output.", escape(fmt)))
+}
+
 /// Generates sentence for printing and looping inside the main function.
 ///
 /// # Arguments
@@ -696,13 +803,7 @@ fn init_call_sentence(code: &Disassembly, func: &Function) -> Option<String> {
 ///
 /// Sentences describing loop output and branch.
 fn loop_print_sentence(ev: &Evidence<'_>, func: &Function) -> Vec<String> {
-    let strings = ev.strings_of(func);
-    let str_hit = strings.iter().find(|s| s.contains('%'));
-    let imm = func.lines.iter().find_map(|l| semantics::parse_imm_dec(&l.text));
-    let mut out = Vec::new();
-    if let (Some(fmt), Some(val)) = (str_hit, imm) {
-        out.push(format!("Inside the loop, it loads immediate value {val} into parameter register r1 and prints \"{}\" via formatted serial output.", escape(fmt)));
-    }
+    let mut out: Vec<String> = loop_print_output(ev, func).into_iter().collect();
     out.push("At the bottom of the loop body, an unconditional backward branch loops execution back to repeat indefinitely.".into());
     out
 }
@@ -712,19 +813,19 @@ fn loop_print_sentence(ev: &Evidence<'_>, func: &Function) -> Vec<String> {
 /// # Arguments
 ///
 /// * `ev` - Evidence resolver.
-/// * `code` - Disassembly result.
+/// * `main_func` - Identified main function.
 ///
 /// # Returns
 ///
 /// Optimization analysis sentences.
 fn optimization_narrative(ev: &Evidence<'_>, main_func: Option<&Function>) -> Vec<String> {
-    let Some(f) = main_func else { return standard_storage_sentences(); };
+    let Some(f) = main_func else { return standard_storage_sentences(ev.binary); };
     let has_fmt = format_string_of(ev, f).is_some();
     let imm = f.lines.iter().find_map(|l| semantics::parse_imm_dec(&l.text));
-    if has_fmt && imm.is_some() {
-        constant_prop_sentences(imm.unwrap_or_default())
+    if let (true, Some(val)) = (has_fmt, imm) {
+        constant_prop_sentences(ev.binary, &val)
     } else {
-        standard_storage_sentences()
+        standard_storage_sentences(ev.binary)
     }
 }
 
@@ -732,25 +833,127 @@ fn optimization_narrative(ev: &Evidence<'_>, main_func: Option<&Function>) -> Ve
 ///
 /// # Arguments
 ///
+/// * `binary` - Parsed executable.
 /// * `val` - Formatted immediate token.
 ///
 /// # Returns
 ///
 /// Explanation sentences.
-fn constant_prop_sentences(val: String) -> Vec<String> {
-    vec![
-        "Compiler Optimization Analysis: In C source code, declaring a variable with an initial value and immediately overwriting it triggers dead-store elimination and constant folding.".into(),
-        format!("Because the initial assignment is never read prior to reassignment, the compiler eliminates it entirely. Rather than reserving a memory slot in SRAM or stack frame storage, the compiler propagates the final constant {val} directly into machine code."),
-        "The variable exists purely inside processor registers as an immediate operand in Flash memory, eliminating all RAM memory overhead.".into(),
-    ]
+fn constant_prop_sentences(binary: &Binary, val: &str) -> Vec<String> {
+    let s1 = "Compiler Optimization Analysis: In C source code, declaring a variable with an initial value and immediately overwriting it triggers dead-store elimination and constant folding.".to_string();
+    let s2 = constant_prop_detail(binary, val);
+    let s3 = constant_prop_storage(binary);
+    vec![s1, s2, s3]
+}
+
+/// Explanation sentence for elimination and propagation into machine code.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+/// * `val` - Formatted immediate value.
+///
+/// # Returns
+///
+/// Second optimization narrative sentence.
+fn constant_prop_detail(binary: &Binary, val: &str) -> String {
+    let mem_slot = match binary.format {
+        Format::Pe | Format::Elf | Format::MachO | Format::MachOUniversal | Format::UImage => "a heap slot or stack frame storage",
+        _ => "a memory slot in SRAM or stack frame storage",
+    };
+    format!("Because the initial assignment is never read prior to reassignment, the compiler eliminates it entirely. Rather than reserving {mem_slot}, the compiler propagates the final constant {val} directly into machine code.")
+}
+
+/// Explanation sentence for register-immediate zero memory overhead.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
+/// # Returns
+///
+/// Third optimization narrative sentence.
+fn constant_prop_storage(binary: &Binary) -> String {
+    let mem_name = match binary.format {
+        Format::Pe | Format::Elf | Format::MachO | Format::MachOUniversal | Format::UImage => "code memory, eliminating memory allocation overhead",
+        _ => "Flash memory, eliminating all RAM memory overhead",
+    };
+    format!("The variable exists purely inside processor registers as an immediate operand in {mem_name}.")
 }
 
 /// Standard storage layout narrative for typical binaries.
 ///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
 /// # Returns
 ///
 /// Default memory storage explanation sentences.
-fn standard_storage_sentences() -> Vec<String> {
+fn standard_storage_sentences(binary: &Binary) -> Vec<String> {
+    match binary.format {
+        Format::Pe => pe_storage_sentences(),
+        Format::Elf => elf_storage_sentences(),
+        Format::MachO | Format::MachOUniversal => macho_storage_sentences(),
+        Format::UImage => uimage_storage_sentences(),
+        _ => raw_storage_sentences(),
+    }
+}
+
+/// Generates storage layout sentences for Windows PE binaries.
+///
+/// # Returns
+///
+/// Windows PE section storage sentences.
+fn pe_storage_sentences() -> Vec<String> {
+    vec![
+        "Variable Storage Analysis: Read-only constants and string literals reside in the `.rdata` section, initialized global variables are stored in the `.data` section, and uninitialized globals reside in `.bss` allocated in virtual memory.".into(),
+        "Local function variables and call arguments are allocated dynamically within processor registers and thread stack frames.".into(),
+    ]
+}
+
+/// Generates storage layout sentences for ELF binaries.
+///
+/// # Returns
+///
+/// ELF section and segment storage sentences.
+fn elf_storage_sentences() -> Vec<String> {
+    vec![
+        "Variable Storage Analysis: Read-only constants and literals reside in the `.rodata` section, initialized global variables reside in `.data`, and uninitialized static data resides in `.bss` allocated at runtime.".into(),
+        "Local function variables and stack arguments reside dynamically within processor registers and thread stack frames.".into(),
+    ]
+}
+
+/// Generates storage layout sentences for Mach-O binaries.
+///
+/// # Returns
+///
+/// Mach-O segment and section storage sentences.
+fn macho_storage_sentences() -> Vec<String> {
+    vec![
+        "Variable Storage Analysis: Read-only constants and strings reside in the `__TEXT` segment (`__cstring`/`__const`), while mutable globals reside in the `__DATA` segment (`__data`/`__bss`).".into(),
+        "Local function variables and call arguments are allocated dynamically within processor registers and thread stack frames.".into(),
+    ]
+}
+
+/// Generates storage layout sentences for U-Boot kernel images.
+///
+/// # Returns
+///
+/// Kernel memory and rootfs storage sentences.
+fn uimage_storage_sentences() -> Vec<String> {
+    vec![
+        "Variable Storage Analysis: Kernel read-only text and symbols reside in kernel memory, while root filesystem contents reside in the embedded SquashFS image mounted in RAM.".into(),
+        "Runtime state, dynamically allocated buffers, and processes reside within virtual memory managed by the kernel allocator.".into(),
+    ]
+}
+
+/// Generates storage layout sentences for raw embedded firmware images.
+///
+/// # Returns
+///
+/// Embedded Flash/SRAM storage sentences.
+fn raw_storage_sentences() -> Vec<String> {
     vec![
         "Variable Storage Analysis: Read-only data resides in Flash memory (.rodata), initialized global variables are stored in Flash and copied to SRAM (.data) at boot, and uninitialized globals are allocated in SRAM (.bss) and zeroed at startup.".into(),
         "Local function variables are allocated dynamically within processor registers and thread stack frames.".into(),
@@ -815,12 +1018,43 @@ fn find_patch_point(binary: &Binary, func: &Function) -> Option<PatchPoint> {
 ///
 /// Explanatory patching sentences.
 fn patch_sentences(binary: &Binary, p: &PatchPoint) -> Vec<String> {
-    let arch = &binary.arch_name;
     let s1 = format!("Reverse Engineering & Binary Patching Vector: The program's runtime behavior is controlled by the immediate operand at virtual address {:#x} (`{}`).", p.address, p.text);
     let s2 = format!("At raw binary file offset {:#x} (address {:#x} minus image base {:#x}), byte {:#04x} represents the loaded constant (decimal {}).", p.file_offset, p.address, binary.image_base, p.byte_val, p.byte_val);
     let s3 = format!("To alter program execution, patch byte {:#04x} at file offset {:#x} to any desired byte (e.g., 0x46 for decimal 70).", p.byte_val, p.file_offset);
-    let s4 = format!("For {arch} deployment, package the patched binary using the target platform flasher and flash to the device.");
+    let s4 = patch_deployment_sentence(binary);
     vec![s1, s2, s3, s4]
+}
+
+/// Formats the final deployment sentence for patched binaries.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+///
+/// # Returns
+///
+/// Deployment instruction sentence.
+fn patch_deployment_sentence(binary: &Binary) -> String {
+    let arch = &binary.arch_name;
+    let act = deployment_action(binary.format);
+    format!("For {arch} deployment, {act}")
+}
+
+/// Returns the deployment action description based on binary format.
+///
+/// # Arguments
+///
+/// * `fmt` - File format.
+///
+/// # Returns
+///
+/// Action description string.
+fn deployment_action(fmt: Format) -> &'static str {
+    match fmt {
+        Format::Pe | Format::Elf | Format::MachO | Format::MachOUniversal => "save the modified executable and verify binary integrity before distribution.",
+        Format::UImage => "recompute the U-Boot header CRC32, rebuild sysupgrade, and flash via U-Boot TFTP recovery.",
+        _ => "package the patched binary using the target platform flasher and flash to the device.",
+    }
 }
 
 /// Finds a format string referenced by a function.
@@ -903,6 +1137,56 @@ mod tests {
         let a = Analysis::default();
         let detailed = detailed_program_story(&a);
         assert!(detailed.boot.is_empty());
+    }
+
+    /// Tests PE boot and storage narrative generation.
+    #[test]
+    fn test_pe_boot_and_storage() {
+        let b = Binary { format: Format::Pe, arch_name: "x86-64".into(), ..Default::default() };
+        let boot = boot_narrative(&b);
+        assert!(boot[0].contains("Windows x86-64"));
+        let storage = standard_storage_sentences(&b);
+        assert!(storage[0].contains(".rdata"));
+    }
+
+    /// Tests ELF boot and storage narrative generation.
+    #[test]
+    fn test_elf_boot_and_storage() {
+        let b = Binary { format: Format::Elf, arch_name: "ARM".into(), ..Default::default() };
+        let boot = boot_narrative(&b);
+        assert!(boot[0].contains("POSIX/Linux ARM"));
+        let storage = standard_storage_sentences(&b);
+        assert!(storage[0].contains(".rodata"));
+    }
+
+    /// Tests Mach-O boot and storage narrative generation.
+    #[test]
+    fn test_macho_boot_and_storage() {
+        let b = Binary { format: Format::MachO, arch_name: "ARM64".into(), ..Default::default() };
+        let boot = boot_narrative(&b);
+        assert!(boot[0].contains("Darwin/macOS ARM64"));
+        let storage = standard_storage_sentences(&b);
+        assert!(storage[0].contains("__TEXT"));
+    }
+
+    /// Tests raw firmware boot and storage narrative generation.
+    #[test]
+    fn test_raw_boot_and_storage() {
+        let b = Binary { format: Format::CortexM, arch_name: "ARM Cortex-M".into(), ..Default::default() };
+        let boot = boot_narrative(&b);
+        assert!(boot[0].contains("vector table"));
+        let storage = standard_storage_sentences(&b);
+        assert!(storage[0].contains("Flash memory"));
+    }
+
+    /// Tests U-Boot image boot and storage narrative generation.
+    #[test]
+    fn test_uimage_boot_and_storage() {
+        let b = Binary { format: Format::UImage, arch_name: "MIPS".into(), ..Default::default() };
+        let boot = boot_narrative(&b);
+        assert!(boot[0].contains("U-Boot bootloader for MIPS"));
+        let storage = standard_storage_sentences(&b);
+        assert!(storage[0].contains("SquashFS"));
     }
 }
 

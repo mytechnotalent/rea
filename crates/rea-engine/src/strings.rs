@@ -317,7 +317,7 @@ fn has_excessive_consonants(s: &str) -> bool {
 /// `true` when one letter appears three or more times and forms at least 40% of letters.
 fn has_repeated_letter(s: &str, alphas: usize) -> bool {
     let mut counts = [0u8; 26];
-    for c in s.chars().filter(|c| c.is_ascii_alphabetic()) {
+    for c in s.chars().filter(char::is_ascii_alphabetic) {
         counts[(c.to_ascii_lowercase() as usize) - ('a' as usize)] += 1;
     }
     counts.iter().any(|&cnt| cnt >= 3 && usize::from(cnt) * 5 >= alphas * 2)
@@ -349,7 +349,7 @@ fn has_symbol_noise(s: &str) -> bool {
 ///
 /// `true` for alternating casing noise like `aKiCa`.
 fn has_alternating_case(s: &str, alphas: usize) -> bool {
-    let letters: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    let letters: Vec<char> = s.chars().filter(char::is_ascii_alphabetic).collect();
     let flips = letters.windows(2).filter(|w| w[0].is_ascii_uppercase() != w[1].is_ascii_uppercase()).count();
     flips >= 3 && flips * 2 >= alphas
 }
@@ -364,7 +364,7 @@ fn has_alternating_case(s: &str, alphas: usize) -> bool {
 ///
 /// `true` when a token contains vowels and normal characters.
 fn has_valid_word(s: &str) -> bool {
-    s.split(|c: char| matches!(c, ' ' | '_' | '-' | '.' | ':' | '/' | ','))
+    s.split([' ', '_', '-', '.', ':', '/', ','])
         .any(|w| w.len() >= 2 && w.chars().any(is_vowel))
 }
 
@@ -383,7 +383,7 @@ pub fn is_plausible(s: &str) -> bool {
     if t.len() < 3 || has_interleaved_digits(t) || has_symbol_noise(t) { return false; }
     if is_version(t) { return true; }
     if t.contains('%') { return is_valid_format_str(t); }
-    let alphas = t.chars().filter(|c| c.is_ascii_alphabetic()).count();
+    let alphas = t.chars().filter(char::is_ascii_alphabetic).count();
     let vowels = t.chars().filter(|c| is_vowel(*c)).count();
     alphas >= 3 && vowels > 0 && vowels * 4 >= alphas && !has_excessive_consonants(t) && !has_repeated_letter(t, alphas) && !has_alternating_case(t, alphas) && has_valid_word(t)
 }

@@ -614,11 +614,37 @@ pub fn discuss(_arch: Arch, _address: u64, text: &str) -> (String, String) {
 /// # Returns
 ///
 /// Discussion string.
-fn category_discussion(category: &str, text: &str) -> String {
+/// Discusses memory and stack instructions.
+///
+/// # Arguments
+///
+/// * `category` - Functional category.
+/// * `text` - Raw instruction text.
+///
+/// # Returns
+///
+/// Discussion string.
+fn discuss_mem(category: &str, text: &str) -> String {
     match category {
         "Stack Frame" => discuss_stack(text),
         "Memory Load" => discuss_load(text),
-        "Memory Store" => discuss_store(text),
+        _ => discuss_store(text),
+    }
+}
+
+/// Dispatches instruction discussion by functional category.
+///
+/// # Arguments
+///
+/// * `category` - Functional category.
+/// * `text` - Raw instruction text.
+///
+/// # Returns
+///
+/// Discussion string.
+fn category_discussion(category: &str, text: &str) -> String {
+    match category {
+        "Stack Frame" | "Memory Load" | "Memory Store" => discuss_mem(category, text),
         "Control Flow" => discuss_branch(text),
         "Arithmetic / Logic" => discuss_alu(text),
         "Register Move" => discuss_move(text),
@@ -655,7 +681,7 @@ fn discuss_move(text: &str) -> String {
 #[must_use]
 pub fn parse_imm_dec(text: &str) -> Option<String> {
     let start = text.find('#')? + 1;
-    let raw: String = text[start..].chars().take_while(is_imm_char).collect();
+    let raw: String = text[start..].chars().take_while(|&c| is_imm_char(c)).collect();
     let val = parse_hex_or_dec(&raw)?;
     Some(format!("{raw} (decimal {val})"))
 }
@@ -669,8 +695,8 @@ pub fn parse_imm_dec(text: &str) -> Option<String> {
 /// # Returns
 ///
 /// `true` for hex digits or 'x'.
-fn is_imm_char(c: &char) -> bool {
-    c.is_ascii_hexdigit() || *c == 'x'
+fn is_imm_char(c: char) -> bool {
+    c.is_ascii_hexdigit() || c == 'x'
 }
 
 /// Parses an immediate number string in hex or decimal.

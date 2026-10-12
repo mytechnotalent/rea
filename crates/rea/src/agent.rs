@@ -325,6 +325,17 @@ fn append_strings_evidence(out: &mut String, a: &Analysis) {
     }
 }
 
+/// Appends disassembly recovery header to evidence text.
+///
+/// # Arguments
+///
+/// * `out` - Destination string.
+/// * `code` - Disassembly summary.
+fn append_code_header(out: &mut String, code: &rea_engine::disasm::Disassembly) {
+    let (n_fn, ins, bit) = (code.functions.len(), code.instructions, code.bitness);
+    let _ = writeln!(out, "CODE RECOVERY: {n_fn} functions, {ins} instructions recovered ({bit}-bit).");
+}
+
 /// Appends disassembly and key function listings to evidence text.
 ///
 /// # Arguments
@@ -333,13 +344,7 @@ fn append_strings_evidence(out: &mut String, a: &Analysis) {
 /// * `a` - Completed analysis.
 fn append_code_evidence(out: &mut String, a: &Analysis) {
     let Some(code) = &a.disassembly else { return };
-    let _ = writeln!(
-        out,
-        "CODE RECOVERY: {} functions, {} instructions recovered ({}-bit).",
-        code.functions.len(),
-        code.instructions,
-        code.bitness
-    );
+    append_code_header(out, code);
     for key in a.key_functions.iter().take(4) {
         append_key_func_listing(out, key);
     }
@@ -374,6 +379,18 @@ fn append_story_evidence(out: &mut String, a: &Analysis) {
     }
 }
 
+/// Appends identity, facts, and capabilities to evidence text.
+///
+/// # Arguments
+///
+/// * `out` - Destination string.
+/// * `a` - Completed analysis.
+fn append_base_evidence(out: &mut String, a: &Analysis) {
+    append_identity(out, a);
+    append_facts(out, a);
+    append_capabilities(out, a);
+}
+
 /// Compiles deterministic engine facts into an evidence dossier.
 ///
 /// # Arguments
@@ -385,9 +402,7 @@ fn append_story_evidence(out: &mut String, a: &Analysis) {
 /// Formatted evidence string.
 fn build_evidence(a: &Analysis) -> String {
     let mut out = String::new();
-    append_identity(&mut out, a);
-    append_facts(&mut out, a);
-    append_capabilities(&mut out, a);
+    append_base_evidence(&mut out, a);
     append_strings_evidence(&mut out, a);
     append_code_evidence(&mut out, a);
     append_story_evidence(&mut out, a);

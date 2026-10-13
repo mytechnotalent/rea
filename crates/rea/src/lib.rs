@@ -51,3 +51,9 @@ pub mod inspect;
 
 /// Model Context Protocol (MCP) server for AI agents.
 pub mod mcp;
+
+/// Engine tools invoked by the autonomous agent loop.
+pub mod tools;
+
+/// Machine-readable JSON report.
+pub mod json;

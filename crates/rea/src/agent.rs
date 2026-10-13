@@ -35,35 +35,24 @@ use rea_engine::{Analysis, FirmwareTriage};
 // Import dependencies from serde_json
 use serde_json::json;
 
-/// System prompt for the analyst agent proposing hypotheses.
-const ANALYST_PROMPT: &str = "You are a principal binary reverse engineering analyst. \
-Given deterministic facts, memory maps, vector tables, strings, and recovered disassembly listings, \
-conduct an exhaustive analysis: \
-(1) Identify the exact microcontroller / SoC platform (e.g., Raspberry Pi RP2040/RP2350, STM32, ESP32, nRF52, etc.) \
-and hardware architecture from memory ranges, vector tables, and MMIO peripheral access. \
-(2) Trace program execution: boot sequence, silicon/clock init, peripheral configuration (GPIO, UART, SIO, Timers), \
-and core application control loops (strictly ground your main function in the identified main loop candidate with formatted prints). \
-(3) Explain variable storage (.rodata, .data, .bss, registers) and compiler optimizations (dead-store elimination, \
-constant folding/propagation where immediate operands replace stack variables in registers). \
-(4) Detail binary patching & reverse engineering vectors: exact instruction, file offset, patch values, and hardware flashing procedures. \
-Do not hallucinate meaning for accidental opcode byte sequences (e.g., FKFAF, BFKFQF, RFKFAF). Only analyze authentic application strings.";
+// Import crate::tools
+use crate::tools::{self, ToolContext};
 
-/// System prompt for the reviewer agent auditing proposals.
-const REVIEWER_PROMPT: &str = "You are a strict technical peer reviewer. \
-Verify the Analyst's hypotheses against the deterministic evidence. Eliminate unsupported claims, \
-verify microcontroller identification against the vector table and memory map, and ensure disassembly citations are accurate.";
+/// System prompt for the autonomous tool-using analyst agent.
+const AGENT_PROMPT: &str = "You are a principal reverse engineering analyst with tools to inspect \
+the target. Investigate autonomously and never fabricate. To use a tool, reply with a single line \
+'ACTION: <tool> <argument>', where <tool> is one of: functions; decompile <name|0xaddr>; \
+strings <query>; emulate <0xaddr>; read <0xaddr> <len>; decrypt; rules; audit; crypto. You then \
+receive an OBSERVATION. When you have the answer, reply with 'FINAL:' followed by an authoritative \
+report with the sections \
+Executive Overview, Architecture Analysis, Program Logic, Recovered Secrets (flags, keys, C2, \
+credentials), and Recommendations. Ground every claim in observations and disassembly.";
 
-/// System prompt for the adjudicator agent synthesizing final output.
-const ADJUDICATOR_PROMPT: &str = "You are the lead security adjudicator. \
-Synthesize findings into an authoritative reverse engineering report matching professional malware/embedded research with markdown sections: \
-### Executive Overview\n\
-### Architecture & Microcontroller Analysis\n\
-### Program Logic & Control Flow\n\
-### Variable Storage & Compiler Optimization\n\
-### Binary Patching & Exploitation Vectors\n\
-### Security Recommendations\n\
-Do not duplicate heading markers. Ground every finding in the provided DETERMINISTIC FACT and disassembly listings. Identify the exact microcontroller model and hardware peripherals from the evidence. \
-Never cite or hallucinate about opcode byte noise fragments (such as FKFAF, BFKFQF, RFKFAF). Only reference genuine application strings.";
+/// Instruction appended to the evidence dossier describing the tool protocol.
+const TOOL_NOTE: &str = "You may call tools to gather more evidence before answering.";
+
+/// Maximum agent turns before stopping.
+const MAX_TURNS: usize = 4;
 
 /// Reads the API key from environment variables.
 ///
@@ -422,80 +411,126 @@ fn build_evidence(a: &Analysis) -> String {
     out
 }
 
-/// Stage 1: Analyst proposes hypotheses grounded in facts.
+/// The agent's next step.
+enum Action {
+    /// Call a tool with an argument.
+    Tool(String, String),
+
+    /// Produce the final report.
+    Final(String),
+
+    /// No structured action; treat the reply as final.
+    None,
+}
+
+/// Parses the agent's next action from a reply.
+///
+/// # Arguments
+///
+/// * `reply` - Model reply text.
+///
+/// # Returns
+///
+/// The parsed action.
+fn parse_action(reply: &str) -> Action {
+    for line in reply.lines() {
+        if let Some(rest) = line.trim().strip_prefix("ACTION:") {
+            return tool_action(rest.trim());
+        }
+    }
+    reply.find("FINAL:").map_or(Action::None, |i| {
+        Action::Final(reply[i + 6..].trim().to_string())
+    })
+}
+
+/// Builds a tool action from the text after `ACTION:`.
+///
+/// # Arguments
+///
+/// * `rest` - Tool name and argument text.
+///
+/// # Returns
+///
+/// The tool action.
+fn tool_action(rest: &str) -> Action {
+    let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    Action::Tool(name.to_string(), args.trim().to_string())
+}
+
+/// Executes one agent turn, updating the scratchpad.
+///
+/// # Arguments
+///
+/// * `ctx` - Tool context.
+/// * `reply` - Model reply text.
+/// * `scratch` - Growing conversation scratchpad.
+///
+/// # Returns
+///
+/// The final report when produced, otherwise `None`.
+fn step(ctx: &ToolContext<'_>, reply: &str, scratch: &mut String) -> Option<String> {
+    match parse_action(reply) {
+        Action::Final(text) => Some(text),
+        Action::Tool(name, args) => {
+            append_observation(scratch, reply, &tools::run(ctx, &name, &args));
+            None
+        }
+        Action::None => Some(reply.to_string()),
+    }
+}
+
+/// Appends the reply and a tool observation to the scratchpad.
+///
+/// # Arguments
+///
+/// * `scratch` - Growing conversation scratchpad.
+/// * `reply` - Model reply text.
+/// * `observation` - Tool result text.
+fn append_observation(scratch: &mut String, reply: &str, observation: &str) {
+    let _ = write!(scratch, "\n\n{reply}\nOBSERVATION:\n{observation}");
+}
+
+/// Runs the tool-calling agent loop.
 ///
 /// # Arguments
 ///
 /// * `key` - API key.
 /// * `model` - Model identifier.
+/// * `ctx` - Tool context.
 /// * `evidence` - Evidence dossier.
 ///
 /// # Returns
 ///
-/// Analyst proposal text.
-fn propose(key: &str, model: &str, evidence: &str) -> Option<String> {
-    chat(key, model, ANALYST_PROMPT, evidence)
+/// The final report, or `None`.
+fn run_loop(key: &str, model: &str, ctx: &ToolContext<'_>, evidence: &str) -> Option<String> {
+    let mut scratch = format!("{evidence}\n\n{TOOL_NOTE}");
+    for _ in 0..MAX_TURNS {
+        let reply = chat(key, model, AGENT_PROMPT, &scratch)?;
+        if let Some(text) = step(ctx, &reply, &mut scratch) {
+            return Some(text);
+        }
+    }
+    None
 }
 
-/// Stage 2: Reviewer audits hypotheses against evidence.
-///
-/// # Arguments
-///
-/// * `key` - API key.
-/// * `model` - Model identifier.
-/// * `evidence` - Evidence dossier.
-/// * `draft` - Analyst proposal.
-///
-/// # Returns
-///
-/// Review critique text.
-fn review(key: &str, model: &str, evidence: &str, draft: &str) -> Option<String> {
-    let prompt = format!("EVIDENCE:\n{evidence}\n\nANALYST PROPOSAL:\n{draft}");
-    chat(key, model, REVIEWER_PROMPT, &prompt)
-}
-
-/// Stage 3: Adjudicator produces final authoritative narrative.
-///
-/// # Arguments
-///
-/// * `key` - API key.
-/// * `model` - Model identifier.
-/// * `evidence` - Evidence dossier.
-/// * `draft` - Analyst proposal.
-/// * `critique` - Reviewer audit.
-///
-/// # Returns
-///
-/// Final synthesized assessment narrative.
-fn adjudicate(
-    key: &str,
-    model: &str,
-    evidence: &str,
-    draft: &str,
-    critique: &str,
-) -> Option<String> {
-    let prompt = format!("EVIDENCE:\n{evidence}\n\nANALYST DRAFT:\n{draft}\n\nAUDIT:\n{critique}");
-    chat(key, model, ADJUDICATOR_PROMPT, &prompt)
-}
-
-/// Runs the autonomous propose-review-adjudicate loop when configured.
+/// Runs the autonomous tool-calling analyst loop when configured.
 ///
 /// # Arguments
 ///
 /// * `analysis` - Completed engine analysis.
+/// * `bytes` - Raw target bytes.
 ///
 /// # Returns
 ///
 /// Final narrative assessment if API key is present and calls succeed.
 #[must_use]
-pub fn evaluate(analysis: &Analysis) -> Option<String> {
+pub fn evaluate(analysis: &Analysis, bytes: &[u8]) -> Option<String> {
     let key = load_api_key()?;
     let model = model_name();
     eprintln!("rea: running autonomous AI analyst loop ({model})");
     let evidence = build_evidence(analysis);
-    let draft = propose(&key, &model, &evidence)?;
-    let audit = review(&key, &model, &evidence, &draft)?;
-    adjudicate(&key, &model, &evidence, &draft, &audit)
+    let ctx = ToolContext { analysis, bytes };
+    run_loop(&key, &model, &ctx, &evidence)
 }
 
 #[cfg(test)]

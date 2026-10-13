@@ -36,7 +36,9 @@ use std::{
 
 // Import dependencies from rea_engine
 use rea_engine::{
-    analyze_path, format_apk_summary, format_dotnet_summary, format_go_summary, Analysis,
+    analyze_path, decompile,
+    disasm::{Disassembly, Function},
+    format_apk_summary, format_dotnet_summary, format_go_summary, Analysis,
 };
 
 // Import dependencies from serde_json
@@ -47,6 +49,9 @@ use serde_json::{json, Value};
 pub struct ServerSession {
     /// Active binary analysis.
     pub active: Option<Analysis>,
+
+    /// Raw bytes of the active target.
+    pub bytes: Option<Vec<u8>>,
 }
 
 /// Dispatches standard MCP lifecycle and catalog methods.
@@ -166,6 +171,22 @@ fn runtime_tools() -> Value {
     ])
 }
 
+/// Returns capability, vulnerability, crypto, and emulation tools.
+///
+/// # Returns
+///
+/// JSON array of analysis tool declarations.
+fn analysis_tools() -> Value {
+    json!([
+        {"name": "run_rules", "description": "Evaluates the capability rule pack against the target.", "inputSchema": {"type": "object"}},
+        {"name": "audit", "description": "Audits the target for vulnerable API sinks with CWE identifiers.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_crypto", "description": "Detects cryptographic constants (AES, MD5, SHA, CRC32, base64).", "inputSchema": {"type": "object"}},
+        {"name": "decrypt_strings", "description": "Recovers strings hidden by single-byte ciphers.", "inputSchema": {"type": "object"}},
+        {"name": "emulate", "description": "Emulates the target from an address and reports recovered flags.", "inputSchema": {"type": "object", "properties": {"address": {"type": "string"}}}},
+        {"name": "unpack", "description": "Emulates the target with stubbed imports to decrypt protected regions.", "inputSchema": {"type": "object", "properties": {"address": {"type": "string"}}}}
+    ])
+}
+
 /// Returns the MCP tool catalog array.
 ///
 /// # Returns
@@ -175,6 +196,7 @@ fn tool_catalog() -> Value {
     let mut all = inspect_tools().as_array().cloned().unwrap_or_default();
     all.extend(advanced_tools().as_array().cloned().unwrap_or_default());
     all.extend(runtime_tools().as_array().cloned().unwrap_or_default());
+    all.extend(analysis_tools().as_array().cloned().unwrap_or_default());
     Value::Array(all)
 }
 
@@ -214,7 +236,7 @@ fn dispatch_basic_tool(s: &mut ServerSession, name: &str, args: &Value) -> Optio
         "open_binary" => Some(call_open(s, args)),
         "binary_session" => Some(call_session(s)),
         "list_functions" => Some(call_functions(s)),
-        "decompile_function" => Some(call_decompile(args)),
+        "decompile_function" => Some(call_decompile(s, args)),
         "find_xrefs" => Some(call_xrefs(args)),
         _ => None,
     }
@@ -274,7 +296,65 @@ fn dispatch_runtime_tool(s: &ServerSession, name: &str) -> Option<String> {
 fn dispatch_tool(s: &mut ServerSession, name: &str, args: &Value) -> String {
     dispatch_basic_tool(s, name, args)
         .or_else(|| dispatch_runtime_tool(s, name))
+        .or_else(|| dispatch_analysis_tool(s, name, args))
         .unwrap_or_else(|| dispatch_adv_tool(s, name, args))
+}
+
+/// Dispatches capability, vulnerability, crypto, and emulation tools.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+/// * `name` - Tool name.
+/// * `args` - Tool argument object.
+///
+/// # Returns
+///
+/// Result string if matched, otherwise `None`.
+fn dispatch_analysis_tool(s: &ServerSession, name: &str, args: &Value) -> Option<String> {
+    let tool = analysis_tool_name(name)?;
+    let (Some(analysis), Some(bytes)) = (&s.active, &s.bytes) else {
+        return Some("No target opened. Call `open_binary` first.".to_string());
+    };
+    let ctx = crate::tools::ToolContext { analysis, bytes };
+    let arg = args.get("address").and_then(Value::as_str).unwrap_or("");
+    Some(crate::tools::run(&ctx, tool, arg))
+}
+
+/// Maps an MCP tool name to an agent tool name.
+///
+/// # Arguments
+///
+/// * `name` - MCP tool name.
+///
+/// # Returns
+///
+/// The agent tool name, or `None`.
+fn analysis_tool_name(name: &str) -> Option<&'static str> {
+    match name {
+        "run_rules" => Some("rules"),
+        "audit" => Some("audit"),
+        "inspect_crypto" => Some("crypto"),
+        "decrypt_strings" => Some("decrypt"),
+        other => emulation_tool_name(other),
+    }
+}
+
+/// Maps an MCP emulation tool name to an agent tool name.
+///
+/// # Arguments
+///
+/// * `name` - MCP tool name.
+///
+/// # Returns
+///
+/// The agent tool name, or `None`.
+fn emulation_tool_name(name: &str) -> Option<&'static str> {
+    match name {
+        "emulate" => Some("emulate"),
+        "unpack" => Some("unpack"),
+        _ => None,
+    }
 }
 
 /// Executes a tools/call request.
@@ -325,13 +405,27 @@ fn format_opened(a: &Analysis) -> String {
 /// Status description string.
 fn open_target(s: &mut ServerSession, path: &str) -> String {
     match analyze_path(Path::new(path)) {
-        Ok(a) => {
-            let desc = format_opened(&a);
-            s.active = Some(a);
-            desc
-        }
+        Ok(a) => record_target(s, a, path),
         Err(e) => format!("Failed to open {path}: {e}"),
     }
+}
+
+/// Records an opened target in the session.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+/// * `analysis` - Completed analysis.
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Status description string.
+fn record_target(s: &mut ServerSession, analysis: Analysis, path: &str) -> String {
+    let desc = format_opened(&analysis);
+    s.active = Some(analysis);
+    s.bytes = std::fs::read(path).ok();
+    desc
 }
 
 /// Tool handler for `open_binary`.
@@ -419,14 +513,92 @@ fn call_functions(s: &ServerSession) -> String {
 ///
 /// # Arguments
 ///
-/// * `args` - Invocation arguments.
+/// * `s` - Active server session.
+/// * `args` - Invocation arguments containing an optional symbol.
 ///
 /// # Returns
 ///
 /// Pseudo-C code representation.
-fn call_decompile(args: &Value) -> String {
-    let sym = args.get("symbol").and_then(Value::as_str).unwrap_or("sub_1000");
-    format!("// Decompiled: {sym}\nvoid {sym}(void) {{\n    // Recovered p-code function\n}}\n")
+fn call_decompile(s: &ServerSession, args: &Value) -> String {
+    let Some(a) = &s.active else {
+        return "No target opened. Call `open_binary` first.".to_string();
+    };
+    let symbol = args.get("symbol").and_then(Value::as_str);
+    match decompile_target(a, symbol) {
+        Some(text) => text,
+        None => "No matching function to decompile.".to_string(),
+    }
+}
+
+/// Decompiles the function selected by symbol or relevance.
+///
+/// # Arguments
+///
+/// * `a` - Analyzed target record.
+/// * `symbol` - Optional function name or hex address.
+///
+/// # Returns
+///
+/// The pseudo-C listing, or `None`.
+fn decompile_target(a: &Analysis, symbol: Option<&str>) -> Option<String> {
+    let code = a.disassembly.as_ref()?;
+    let arch = a.binary.as_ref()?.arch;
+    let func = select_function(a, code, symbol)?;
+    Some(decompile(func, arch))
+}
+
+/// Selects a function by symbol or by key-function ranking.
+///
+/// # Arguments
+///
+/// * `a` - Analyzed target record.
+/// * `code` - Recovered code structure.
+/// * `symbol` - Optional function name or hex address.
+///
+/// # Returns
+///
+/// The matching function, or `None`.
+fn select_function<'a>(
+    a: &'a Analysis,
+    code: &'a Disassembly,
+    symbol: Option<&str>,
+) -> Option<&'a Function> {
+    symbol.map_or_else(
+        || a.key_functions.first().and_then(|key| code.functions.get(&key.address)),
+        |name| code.functions.values().find(|func| matches_function(func, name)),
+    )
+}
+
+/// Reports whether a function matches a name or address.
+///
+/// # Arguments
+///
+/// * `func` - Function to test.
+/// * `target` - Function name or hex address.
+///
+/// # Returns
+///
+/// `true` when the function matches.
+fn matches_function(func: &Function, target: &str) -> bool {
+    if func.name.as_deref() == Some(target) {
+        return true;
+    }
+    parse_address(target) == Some(func.address)
+}
+
+/// Parses a hexadecimal address with or without a `0x` prefix.
+///
+/// # Arguments
+///
+/// * `text` - Address text.
+///
+/// # Returns
+///
+/// The parsed address, or `None`.
+fn parse_address(text: &str) -> Option<u64> {
+    let trimmed = text.trim();
+    let body = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X"));
+    u64::from_str_radix(body.unwrap_or(trimmed), 16).ok()
 }
 
 /// Tool handler for `find_xrefs`.
@@ -686,8 +858,9 @@ fn handle_client_line(session: &mut ServerSession, line: &str) {
     if let Ok(req) = serde_json::from_slice::<Value>(line.as_bytes()) {
         let m = req.get("method").and_then(Value::as_str).unwrap_or("");
         let params = req.get("params").unwrap_or(&Value::Null);
-        let resp = dispatch_method(session, req.get("id"), m, params);
-        println!("{resp}");
+        if let Some(resp) = req.get("id").map(|id| dispatch_method(session, Some(id), m, params)) {
+            println!("{resp}");
+        }
     }
 }
 
@@ -731,6 +904,17 @@ fn print_agent_config(title: &str, file: &str) {
     );
 }
 
+/// Builds the `OpenCode` `mcp` server entry for the current executable.
+///
+/// # Returns
+///
+/// JSON object registering the running `rea` binary under the `mcp` key.
+fn opencode_server_entry() -> Value {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let cmd = json!([exe.to_string_lossy().to_string(), "serve"]);
+    json!({"rea": {"type": "local", "command": cmd, "enabled": true}})
+}
+
 /// Prints MCP configuration snippets for AI coding agents.
 ///
 /// # Returns
@@ -741,7 +925,8 @@ pub fn config_cmd() -> ExitCode {
     println!("=== Claude Code CLI ===");
     println!("claude mcp add rea rea serve\n");
     print_agent_config("Claude Desktop", "claude_desktop_config.json");
-    print_agent_config("OpenCode & Gemini", "mcp_config.json");
+    println!("=== OpenCode (opencode.json / opencode.jsonc) ===");
+    println!("{}", opencode_server_entry());
     print_agent_config("Cursor", "~/.cursor/mcp.json");
     print_agent_config("Windsurf", "~/.codeium/windsurf/mcp_config.json");
     ExitCode::SUCCESS
@@ -774,6 +959,17 @@ fn write_mcp_config_file(path: &Path) {
     let _ = std::fs::write(path, content);
 }
 
+/// Writes `OpenCode` `opencode.jsonc` with the REA server registered.
+fn write_opencode_config() {
+    let raw = std::fs::read_to_string("opencode.jsonc").unwrap_or_default();
+    let mut root = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({}));
+    if let Some(map) = root.as_object_mut() {
+        map.insert("mcp".into(), opencode_server_entry());
+    }
+    let content = serde_json::to_string_pretty(&root).unwrap_or_default();
+    let _ = std::fs::write("opencode.jsonc", content);
+}
+
 /// Runs turnkey setup for Claude Code and `OpenCode`.
 ///
 /// # Returns
@@ -782,7 +978,9 @@ fn write_mcp_config_file(path: &Path) {
 #[must_use]
 pub fn setup_cmd() -> ExitCode {
     write_mcp_config_file(Path::new("mcp_config.json"));
+    write_opencode_config();
     println!("✓ Turnkey OpenCode / AI Agent MCP configuration written to ./mcp_config.json");
+    println!("✓ OpenCode MCP registration written to ./opencode.jsonc");
     println!("✓ Turnkey Claude Code CLI setup command:");
     println!("  claude mcp add rea rea serve");
     ExitCode::SUCCESS
@@ -798,7 +996,7 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 12);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 18);
     }
 
     /// Verifies runtime tool handlers reject empty sessions.
@@ -808,5 +1006,14 @@ mod tests {
         assert_eq!(call_go(&session), "No target opened.");
         assert_eq!(call_dotnet(&session), "No target opened.");
         assert_eq!(call_android(&session), "No target opened.");
+    }
+
+    /// Verifies `OpenCode` server entry shape.
+    #[test]
+    fn test_opencode_server_entry_shape() {
+        let entry = opencode_server_entry();
+        assert_eq!(entry["rea"]["type"], "local");
+        assert_eq!(entry["rea"]["enabled"], true);
+        assert_eq!(entry["rea"]["command"].as_array().map_or(0, Vec::len), 2);
     }
 }

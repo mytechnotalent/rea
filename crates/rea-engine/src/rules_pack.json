@@ -1,0 +1,346 @@
+{
+  "rules": [
+    {
+      "name": "packed with UPX",
+      "namespace": "anti-analysis/packer/upx",
+      "description": "the sample appears to be packed with UPX",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Anti-Static Analysis::Software Packing [B0001]"],
+      "features": { "string": "UPX" }
+    },
+    {
+      "name": "detect debugger via IsDebuggerPresent",
+      "namespace": "anti-analysis/anti-debugging/debugger-detection",
+      "description": "checks for a debugger with the Windows API",
+      "scope": "file",
+      "attack": ["Defense Evasion::Debugger Evasion [T1622]"],
+      "mbc": ["Anti-Behavioral Analysis::Debugger Detection [B0001]"],
+      "features": { "or": [ { "api": "IsDebuggerPresent" }, { "api": "CheckRemoteDebuggerPresent" }, { "api": "NtQueryInformationProcess" } ] }
+    },
+    {
+      "name": "detect virtual machine",
+      "namespace": "anti-analysis/anti-vm/vm-detection",
+      "description": "looks for virtual machine artifacts",
+      "scope": "file",
+      "attack": ["Defense Evasion::Virtualization/Sandbox Evasion [T1497]"],
+      "mbc": ["Anti-Behavioral Analysis::Virtual Machine Detection [B0009]"],
+      "features": { "or": [ { "string": "vmware" }, { "string": "virtualbox" }, { "string": "vbox" }, { "string": "qemu" }, { "string": "sandbox" } ] }
+    },
+    {
+      "name": "timing check via rdtsc",
+      "namespace": "anti-analysis/anti-debugging/timing",
+      "description": "uses the timestamp counter to detect instrumentation",
+      "scope": "function",
+      "attack": ["Defense Evasion::Debugger Evasion [T1622]"],
+      "mbc": ["Anti-Behavioral Analysis::Debugger Detection [B0001]"],
+      "features": { "mnemonic": "rdtsc" }
+    },
+    {
+      "name": "HTTP client via WinINet",
+      "namespace": "communication/http/client",
+      "description": "communicates over HTTP with WinINet",
+      "scope": "file",
+      "attack": ["Command and Control::Application Layer Protocol [T1071]"],
+      "mbc": ["Communication::HTTP Communication [C0002]"],
+      "features": { "or": [ { "api": "InternetOpen" }, { "api": "InternetConnect" }, { "api": "HttpSendRequest" }, { "api": "InternetReadFile" } ] }
+    },
+    {
+      "name": "HTTP client via WinHTTP",
+      "namespace": "communication/http/client",
+      "description": "communicates over HTTP with WinHTTP",
+      "scope": "file",
+      "attack": ["Command and Control::Application Layer Protocol [T1071]"],
+      "mbc": ["Communication::HTTP Communication [C0002]"],
+      "features": { "or": [ { "api": "WinHttpOpen" }, { "api": "WinHttpConnect" }, { "api": "WinHttpSendRequest" } ] }
+    },
+    {
+      "name": "create TCP socket",
+      "namespace": "communication/socket/tcp",
+      "description": "creates and connects a TCP socket",
+      "scope": "file",
+      "attack": ["Command and Control::Non-Application Layer Protocol [T1095]"],
+      "mbc": ["Communication::Socket Communication [C0001]"],
+      "features": { "and": [ { "or": [ { "api": "socket" }, { "api": "WSASocket" } ] }, { "api": "connect" } ] }
+    },
+    {
+      "name": "resolve DNS",
+      "namespace": "communication/dns",
+      "description": "resolves a host name",
+      "scope": "file",
+      "attack": ["Command and Control::Application Layer Protocol::DNS [T1071.004]"],
+      "mbc": ["Communication::DNS Communication [C0011]"],
+      "features": { "or": [ { "api": "getaddrinfo" }, { "api": "gethostbyname" }, { "api": "DnsQuery" } ] }
+    },
+    {
+      "name": "execute shell command",
+      "namespace": "c2/shell",
+      "description": "runs a shell command",
+      "scope": "file",
+      "attack": ["Execution::Command and Scripting Interpreter [T1059]"],
+      "mbc": ["Process::Create Process [C0017]"],
+      "features": { "or": [ { "api": "system" }, { "api": "popen" }, { "api": "execve" }, { "api": "execl" }, { "api": "execvp" } ] }
+    },
+    {
+      "name": "reverse shell via cmd",
+      "namespace": "communication/c2/shell",
+      "description": "spawns a command shell, likely for a reverse shell",
+      "scope": "file",
+      "attack": ["Execution::Command and Scripting Interpreter::Windows Command Shell [T1059.003]"],
+      "mbc": ["Impact::Remote Access::Reverse Shell [B0022.001]"],
+      "features": { "and": [ { "or": [ { "api": "CreateProcess" }, { "api": "WinExec" } ] }, { "or": [ { "string": "cmd.exe" }, { "string": "/bin/sh" }, { "string": "cmd /c" } ] } ] }
+    },
+    {
+      "name": "encrypt data",
+      "namespace": "data-manipulation/encryption",
+      "description": "encrypts data with a cryptographic API",
+      "scope": "file",
+      "attack": ["Impact::Data Encrypted for Impact [T1486]"],
+      "mbc": ["Data::Encode Data::Encrypt Data [C0027.001]"],
+      "features": { "or": [ { "api": "CryptEncrypt" }, { "api": "CryptGenKey" }, { "api": "BCryptEncrypt" }, { "api": "EVP_EncryptInit" } ] }
+    },
+    {
+      "name": "decrypt data",
+      "namespace": "data-manipulation/encryption",
+      "description": "decrypts data with a cryptographic API",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Data::Decode Data::Decrypt Data [C0055]"],
+      "features": { "or": [ { "api": "CryptDecrypt" }, { "api": "BCryptDecrypt" }, { "api": "EVP_DecryptInit" } ] }
+    },
+    {
+      "name": "hash data",
+      "namespace": "data-manipulation/hashing",
+      "description": "hashes data with a cryptographic API",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Data::Encode Data::Hash Data [C0027.003]"],
+      "features": { "or": [ { "api": "CryptHashData" }, { "api": "BCryptHash" }, { "api": "MD5Init" }, { "api": "SHA1_Init" } ] }
+    },
+    {
+      "name": "base64 alphabet",
+      "namespace": "data-manipulation/encoding/base64",
+      "description": "contains a base64 alphabet table",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Data::Encode Data::Base64 [C0026.001]"],
+      "features": { "string": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" }
+    },
+    {
+      "name": "create process",
+      "namespace": "host-interaction/process/create",
+      "description": "spawns a new process",
+      "scope": "file",
+      "attack": ["Execution::Command and Scripting Interpreter [T1059]"],
+      "mbc": ["Process::Create Process [C0017]"],
+      "features": { "or": [ { "api": "CreateProcess" }, { "api": "WinExec" }, { "api": "ShellExecute" }, { "api": "fork" }, { "api": "execve" }, { "api": "posix_spawn" } ] }
+    },
+    {
+      "name": "inject code into remote process",
+      "namespace": "host-interaction/process/inject",
+      "description": "writes and executes code in another process",
+      "scope": "file",
+      "attack": ["Defense Evasion::Process Injection [T1055]"],
+      "mbc": ["Process::Create Process [C0017]"],
+      "features": { "or": [ { "api": "VirtualAllocEx" }, { "api": "WriteProcessMemory" }, { "api": "CreateRemoteThread" }, { "api": "NtWriteVirtualMemory" } ] }
+    },
+    {
+      "name": "create thread",
+      "namespace": "host-interaction/thread/create",
+      "description": "creates a new thread",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Process::Create Thread [C0038]"],
+      "features": { "or": [ { "api": "CreateThread" }, { "api": "pthread_create" } ] }
+    },
+    {
+      "name": "write file",
+      "namespace": "host-interaction/file-system/write",
+      "description": "writes data to a file",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["File System::Create File [C0016]"],
+      "features": { "or": [ { "api": "WriteFile" }, { "api": "fwrite" }, { "api": "fopen" } ] }
+    },
+    {
+      "name": "delete file",
+      "namespace": "host-interaction/file-system/delete",
+      "description": "deletes a file",
+      "scope": "file",
+      "attack": ["Impact::Data Destruction [T1485]"],
+      "mbc": ["File System::Delete File [C0047]"],
+      "features": { "or": [ { "api": "DeleteFile" }, { "api": "unlink" }, { "api": "remove" } ] }
+    },
+    {
+      "name": "modify registry",
+      "namespace": "host-interaction/registry",
+      "description": "reads or writes the registry",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Operating System::Registry [C0036]"],
+      "features": { "or": [ { "api": "RegSetValue" }, { "api": "RegCreateKey" }, { "api": "RegOpenKey" }, { "api": "RegQueryValue" } ] }
+    },
+    {
+      "name": "persist via Run key",
+      "namespace": "persistence/registry/run",
+      "description": "persists through a registry Run key",
+      "scope": "file",
+      "attack": ["Persistence::Boot or Logon Autostart Execution::Registry Run Keys [T1547.001]"],
+      "mbc": ["Persistence::Registry Run Keys / Startup Folder [F0012]"],
+      "features": { "and": [ { "or": [ { "api": "RegSetValue" }, { "api": "RegCreateKey" } ] }, { "string": "CurrentVersion\\Run" } ] }
+    },
+    {
+      "name": "create or start service",
+      "namespace": "persistence/service",
+      "description": "installs or starts a Windows service",
+      "scope": "file",
+      "attack": ["Persistence::Create or Modify System Process::Windows Service [T1543.003]"],
+      "mbc": ["Persistence::Install Service [F0012]"],
+      "features": { "or": [ { "api": "CreateService" }, { "api": "OpenSCManager" }, { "api": "StartService" } ] }
+    },
+    {
+      "name": "log keystrokes",
+      "namespace": "collection/keylogging",
+      "description": "captures keyboard input",
+      "scope": "file",
+      "attack": ["Collection::Input Capture::Keylogging [T1056.001]"],
+      "mbc": ["Collection::Keylogging [F0002.001]"],
+      "features": { "or": [ { "api": "SetWindowsHookEx" }, { "api": "GetAsyncKeyState" }, { "api": "GetKeyState" } ] }
+    },
+    {
+      "name": "capture screen",
+      "namespace": "collection/screenshot",
+      "description": "captures the screen",
+      "scope": "file",
+      "attack": ["Collection::Screen Capture [T1113]"],
+      "mbc": ["Collection::Screen Capture [E0005]"],
+      "features": { "or": [ { "api": "BitBlt" }, { "api": "CreateCompatibleBitmap" } ] }
+    },
+    {
+      "name": "resolve API by name at runtime",
+      "namespace": "load-code/api-resolution",
+      "description": "resolves functions dynamically",
+      "scope": "file",
+      "attack": ["Defense Evasion::Obfuscated Files or Information [T1027]"],
+      "mbc": ["Linking::Dynamic Link Library [C0041]"],
+      "features": { "or": [ { "api": "GetProcAddress" }, { "api": "dlsym" } ] }
+    },
+    {
+      "name": "load library at runtime",
+      "namespace": "load-code/library",
+      "description": "loads a shared library at runtime",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Linking::Dynamic Link Library [C0041]"],
+      "features": { "or": [ { "api": "LoadLibrary" }, { "api": "dlopen" } ] }
+    },
+    {
+      "name": "allocate executable memory",
+      "namespace": "load-code/shellcode",
+      "description": "allocates and marks memory executable",
+      "scope": "file",
+      "attack": ["Defense Evasion::Process Injection [T1055]"],
+      "mbc": ["Memory::Allocate Memory [C0007]"],
+      "features": { "and": [ { "or": [ { "api": "VirtualAlloc" }, { "api": "mmap" } ] }, { "or": [ { "api": "VirtualProtect" }, { "api": "mprotect" } ] } ] }
+    },
+    {
+      "name": "PE executable",
+      "namespace": "executable/pe",
+      "description": "is a Windows PE image",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "string": "This program cannot be run in DOS mode" }
+    },
+    {
+      "name": "MZ header",
+      "namespace": "executable/pe",
+      "description": "starts with a DOS MZ header",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "bytes": "4d5a" }
+    },
+    {
+      "name": "ELF executable",
+      "namespace": "executable/elf",
+      "description": "is a Linux ELF image",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "bytes": "7f454c46" }
+    },
+    {
+      "name": "Macho executable",
+      "namespace": "executable/macho",
+      "description": "is a Mach-O image",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "bytes": "cffaedfe" }
+    },
+    {
+      "name": "managed .NET assembly",
+      "namespace": "runtime/dotnet",
+      "description": "is a .NET assembly",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "or": [ { "string": "mscorlib" }, { "string": "System.Private.CoreLib" }, { "string": "BSJB" } ] }
+    },
+    {
+      "name": "Go binary",
+      "namespace": "runtime/go",
+      "description": "is a Go binary",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "or": [ { "string": "runtime.main" }, { "string": "go.buildid" }, { "string": "runtime.goexit" } ] }
+    },
+    {
+      "name": "MSVC toolchain",
+      "namespace": "compiler/msvc",
+      "description": "built with the Microsoft toolchain",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "string": "Rich" }
+    },
+    {
+      "name": "GCC toolchain",
+      "namespace": "compiler/gcc",
+      "description": "built with GCC",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "or": [ { "string": "GCC: (" }, { "string": "GNU C" } ] }
+    },
+    {
+      "name": "OpenSSL library",
+      "namespace": "lib/openssl",
+      "description": "links OpenSSL",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "string": "OpenSSL" }
+    },
+    {
+      "name": "zlib library",
+      "namespace": "lib/zlib",
+      "description": "links zlib",
+      "scope": "file",
+      "attack": [],
+      "mbc": [],
+      "features": { "or": [ { "string": "inflate" }, { "string": "deflate 1." } ] }
+    },
+    {
+      "name": "RC4 key scheduling",
+      "namespace": "data-manipulation/encryption/rc4",
+      "description": "implements the RC4 key schedule",
+      "scope": "file",
+      "attack": [],
+      "mbc": ["Data::Encode Data::Encrypt Data [C0027.001]"],
+      "features": { "string": "RC4" }
+    }
+  ]
+}

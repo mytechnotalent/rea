@@ -279,11 +279,27 @@ fn is_logic_or_shift(m: &str) -> bool {
 fn discuss_stack(text: &str) -> String {
     let lower = text.to_ascii_lowercase();
     if lower.contains("push") {
-        "Function prologue: saves callee registers and return address to stack frame.".into()
+        push_text(text)
     } else if lower.contains("pop") {
-        discuss_pop(&lower)
+        discuss_pop(text)
     } else {
         discuss_stack_adjust(&lower)
+    }
+}
+
+/// Discusses push operations.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// Discussion string.
+fn push_text(text: &str) -> String {
+    match operands_of(text).first() {
+        Some(op) => format!("Pushes {op} onto the stack, saving its value."),
+        None => "Saves registers and the return address to the stack frame.".into(),
     }
 }
 
@@ -291,16 +307,19 @@ fn discuss_stack(text: &str) -> String {
 ///
 /// # Arguments
 ///
-/// * `lower` - Lowercase instruction text.
+/// * `text` - Instruction text.
 ///
 /// # Returns
 ///
 /// Discussion string.
-fn discuss_pop(lower: &str) -> String {
+fn discuss_pop(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
     if lower.contains("pc") || lower.contains("ret") {
-        "Function epilogue: restores registers and returns control to caller.".into()
-    } else {
-        "Restores preserved register state from stack frame.".into()
+        return "Function epilogue: returns control to the caller.".into();
+    }
+    match operands_of(text).first() {
+        Some(op) => format!("Restores {op} from the stack frame."),
+        None => "Restores register state from the stack frame.".into(),
     }
 }
 
@@ -408,11 +427,11 @@ fn discuss_store(text: &str) -> String {
 fn discuss_branch(text: &str) -> String {
     let lower = text.to_ascii_lowercase();
     if is_call_or_ret(&lower) {
-        discuss_call_or_ret(&lower)
+        discuss_call_or_ret(text, &lower)
     } else if lower.starts_with("cb") {
-        discuss_compare_branch(&lower)
+        discuss_compare_branch(text)
     } else {
-        discuss_direct_branch(&lower)
+        discuss_direct_branch(text)
     }
 }
 
@@ -442,12 +461,13 @@ fn is_call_or_ret(lower: &str) -> bool {
 /// # Returns
 ///
 /// Discussion string.
-fn discuss_call_or_ret(lower: &str) -> String {
+fn discuss_call_or_ret(text: &str, lower: &str) -> String {
     if lower.starts_with("bx lr") || lower.starts_with("ret") {
-        "Function return: branches to return address held in link register.".into()
-    } else {
-        "Subroutine call: branches to target function saving return address in link register."
-            .into()
+        return "Returns to the caller via the link register.".into();
+    }
+    match target_of(text) {
+        Some(target) => format!("Calls {target}, saving the return address."),
+        None => "Calls the target subroutine.".into(),
     }
 }
 
@@ -460,12 +480,28 @@ fn discuss_call_or_ret(lower: &str) -> String {
 /// # Returns
 ///
 /// Discussion string.
-fn discuss_compare_branch(lower: &str) -> String {
-    if lower.starts_with("cbz") {
-        "Compare and branch on zero: conditional jump guarded on register zero value.".into()
+fn discuss_compare_branch(text: &str) -> String {
+    let kind = zero_kind(text);
+    match target_of(text) {
+        Some(target) => format!("Branches to {target} when the register is {kind}."),
+        None => format!("Branches when the register is {kind}."),
+    }
+}
+
+/// Returns the compare-and-branch kind.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// `zero` or `non-zero`.
+fn zero_kind(text: &str) -> &'static str {
+    if text.to_ascii_lowercase().starts_with("cbz") {
+        "zero"
     } else {
-        "Compare and branch on non-zero: conditional jump guarded on non-zero register value."
-            .into()
+        "non-zero"
     }
 }
 
@@ -478,12 +514,57 @@ fn discuss_compare_branch(lower: &str) -> String {
 /// # Returns
 ///
 /// Discussion string.
-fn discuss_direct_branch(lower: &str) -> String {
-    if (lower.starts_with('b') && !lower.starts_with("bl")) || lower.starts_with("jmp") {
-        "Unconditional branch transferring execution flow to target block or loop.".into()
-    } else {
-        "Conditional branch evaluated from arithmetic flags.".into()
+fn discuss_direct_branch(text: &str) -> String {
+    let kind = branch_kind(text);
+    match target_of(text) {
+        Some(target) => format!("{kind} transferring execution to {target}."),
+        None => format!("{kind} transferring execution flow."),
     }
+}
+
+/// Returns the branch kind for a mnemonic.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// `Unconditional branch` or `Conditional branch`.
+fn branch_kind(text: &str) -> &'static str {
+    if is_unconditional(&text.to_ascii_lowercase()) {
+        "Unconditional branch"
+    } else {
+        "Conditional branch"
+    }
+}
+
+/// Reports whether a branch mnemonic is unconditional.
+///
+/// # Arguments
+///
+/// * `lower` - Lowercase text.
+///
+/// # Returns
+///
+/// `true` for unconditional branches.
+fn is_unconditional(lower: &str) -> bool {
+    (lower.starts_with('b') && !lower.starts_with("bl")) || lower.starts_with("jmp")
+}
+
+/// Extracts the hexadecimal branch or call target.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// The target text, or `None`.
+fn target_of(text: &str) -> Option<&str> {
+    let start = text.find("0x")?;
+    let digits = text[start + 2..].chars().take_while(char::is_ascii_hexdigit).count();
+    Some(&text[start..start + 2 + digits])
 }
 
 /// Produces discussion for arithmetic, logic, and comparison operations.
@@ -662,11 +743,43 @@ fn category_discussion(category: &str, text: &str) -> String {
 ///
 /// Discussion string.
 fn discuss_move(text: &str) -> String {
-    if let Some(imm) = parse_imm_dec(text) {
-        format!("Copies immediate value {imm} into destination register.")
-    } else {
-        "Copies register value into destination register.".into()
+    let ops = operands_of(text);
+    match (ops.first(), ops.get(1)) {
+        (Some(dst), Some(src)) => copy_into(dst, src),
+        (Some(dst), None) => format!("Loads {dst}."),
+        _ => "Copies a value into a register.".into(),
     }
+}
+
+/// Describes a copy into a destination.
+///
+/// # Arguments
+///
+/// * `dst` - Destination operand.
+/// * `src` - Source operand.
+///
+/// # Returns
+///
+/// Discussion string.
+fn copy_into(dst: &str, src: &str) -> String {
+    match parse_imm_dec(src) {
+        Some(imm) => format!("Copies immediate value {imm} into {dst}."),
+        None => format!("Copies {src} into {dst}."),
+    }
+}
+
+/// Splits instruction text into its operands.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// The trimmed operand list.
+fn operands_of(text: &str) -> Vec<&str> {
+    let rest = text.split_once(char::is_whitespace).map_or("", |(_, r)| r);
+    rest.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
 }
 
 /// Extracts immediate operand text and its decimal value if present.

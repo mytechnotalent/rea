@@ -59,6 +59,15 @@ mod summary;
 /// Top-level plain-English description of program behavior.
 mod program_summary;
 
+/// Sink-based vulnerability findings.
+mod vulns;
+
+/// Capability rule matches.
+mod rules;
+
+/// Cryptographic constant findings.
+mod crypto;
+
 /// Shared formatting helpers.
 pub mod text;
 
@@ -75,7 +84,7 @@ use rea_engine::Analysis;
 use rea_report::{Block, Document, Section, Table};
 
 /// Report section builders, in reading order.
-const SECTIONS: [fn(&Analysis) -> Vec<Section>; 11] = [
+const SECTIONS: [fn(&Analysis) -> Vec<Section>; 12] = [
     summary::sections,
     program_summary::sections,
     identity::sections,
@@ -84,6 +93,7 @@ const SECTIONS: [fn(&Analysis) -> Vec<Section>; 11] = [
     imports::sections,
     strings::sections,
     code::sections,
+    vulns::sections,
     dynamic::sections,
     packing::sections,
     method::sections,
@@ -348,16 +358,33 @@ fn assessment_section(text: &str) -> Section {
 /// # Arguments
 ///
 /// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
 /// * `assessment` - AI analyst narrative, when available.
 ///
 /// # Returns
 ///
 /// The format-neutral report document.
 #[must_use]
-pub fn build(analysis: &Analysis, assessment: Option<&str>) -> Document {
+pub fn build(analysis: &Analysis, bytes: &[u8], assessment: Option<&str>) -> Document {
     let title = format!("Reverse Engineering Report: {}", analysis.name);
     let mut document = Document::new(&title, &subtitle(analysis));
     document.sections = SECTIONS.iter().flat_map(|b| b(analysis)).collect();
+    document.sections.extend(rules::sections(analysis, bytes));
+    document.sections.extend(crypto::sections(bytes));
+    with_assessment(document, assessment)
+}
+
+/// Inserts the AI assessment section when present.
+///
+/// # Arguments
+///
+/// * `document` - Report document.
+/// * `assessment` - AI analyst narrative, when available.
+///
+/// # Returns
+///
+/// The document.
+fn with_assessment(mut document: Document, assessment: Option<&str>) -> Document {
     if let Some(text) = assessment {
         document.sections.insert(1, assessment_section(text));
     }
@@ -388,7 +415,7 @@ mod tests {
     #[test]
     fn test_build_unknown_data() {
         let analysis = rea_engine::analyze("blob.bin", b"plain text with http://example.test");
-        let document = build(&analysis, None);
+        let document = build(&analysis, &[], None);
         assert!(document.title.ends_with("blob.bin"));
         assert!(document.sections.len() >= 4);
     }
@@ -399,7 +426,7 @@ mod tests {
         let path = std::env::current_exe().unwrap();
         let analysis = rea_engine::analyze_path(&path).unwrap();
         let headings: Vec<String> =
-            build(&analysis, None).sections.into_iter().map(|s| s.heading).collect();
+            build(&analysis, &[], None).sections.into_iter().map(|s| s.heading).collect();
         assert!(headings.iter().any(|h| h == "Key Functions"));
     }
 

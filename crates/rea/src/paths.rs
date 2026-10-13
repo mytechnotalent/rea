@@ -36,6 +36,8 @@ pub struct ReportPaths {
     pub markdown: PathBuf,
     /// Primary PDF report path.
     pub pdf: PathBuf,
+    /// Machine-readable report JSON path.
+    pub json: PathBuf,
     /// Threat dossier markdown path.
     pub analysis_md: PathBuf,
     /// Threat dossier PDF path.
@@ -68,6 +70,7 @@ fn base_paths(d: &Path, stem: &str) -> ReportPaths {
     ReportPaths {
         markdown: d.join(format!("re-{stem}.md")),
         pdf: d.join(format!("re-{stem}.pdf")),
+        json: d.join(format!("re-{stem}.json")),
         findings: d.join("findings.json"),
         ..Default::default()
     }

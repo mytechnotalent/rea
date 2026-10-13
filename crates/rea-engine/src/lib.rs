@@ -37,6 +37,9 @@ pub mod analysis;
 /// Import-based capability classification.
 pub mod capabilities;
 
+/// .NET CIL method-body disassembly.
+pub mod cil;
+
 /// File format identification by signature.
 pub mod detect;
 
@@ -76,6 +79,9 @@ mod macho;
 /// Multi-architecture disassembly via SLEIGH.
 pub mod multiarch;
 
+/// Capability rule engine with an embedded rule pack.
+pub mod rules;
+
 /// Behavioral narrative synthesis from recovered code.
 pub mod narrative;
 
@@ -106,6 +112,12 @@ pub mod squashfs;
 /// Printable string extraction.
 pub mod strings;
 
+/// Emulation-driven unpacking with stubbed imports.
+pub mod unpack;
+
+/// Sink-based vulnerability audit with SARIF export.
+pub mod vulns;
+
 /// Calendar formatting of timestamps.
 mod time;
 
@@ -130,8 +142,19 @@ pub mod dotnet;
 /// Android DEX and APK package forensics.
 pub mod dex;
 
+/// Cipher recovery for obfuscated strings and configuration.
+pub mod decrypt;
+
+/// Cryptographic constant detection.
+pub mod crypto;
+
+/// Structured p-code decompilation into pseudo-C.
+pub mod decompiler;
+
 pub use analysis::{analyze, analyze_path, Analysis};
 pub use asar::{AsarIpcChannel, AsarSecret, AsarTriage, AsarWarning};
+pub use decompiler::decompile;
+pub use decrypt::{recover, Decoded};
 pub use detect::Format;
 pub use dex::{format_apk_summary, parse_apk_metadata, parse_dex_header, ApkMetadata, DexMetadata};
 pub use discover::Finding;

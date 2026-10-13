@@ -27,10 +27,11 @@
 //! SOFTWARE.
 
 // Import dependencies from std
-use std::cmp::Reverse;
+use std::{cmp::Reverse, collections::BTreeSet};
 
 // Import dependencies from rea_engine
 use rea_engine::{
+    decompile,
     disasm::{DataEntry, Disassembly, Function},
     insights::KeyFunction,
     narrative::{self, Evidence},
@@ -82,6 +83,12 @@ const DATA_HEADERS: [&str; 5] = [
     "Security Discussion",
 ];
 
+/// Largest function, in instructions, rendered as recovered pseudo-C.
+const DECOMP_CAP: usize = 200;
+
+/// Most functions per report rendered as recovered pseudo-C.
+const DECOMP_LIMIT: usize = 64;
+
 /// Builds the code analysis and key function sections.
 ///
 /// # Arguments
@@ -110,7 +117,7 @@ pub fn sections(analysis: &Analysis) -> Vec<Section> {
 ///
 /// List of sections.
 fn code_sections(analysis: &Analysis, code: &Disassembly) -> Vec<Section> {
-    let mut sections = vec![overview(code), key_functions(&analysis.key_functions)];
+    let mut sections = vec![overview(code), key_functions(analysis)];
     if !code.functions.is_empty() {
         sections.push(walkthrough(analysis, code));
     }
@@ -230,10 +237,13 @@ fn imports_text(function: &Function) -> String {
 /// # Returns
 ///
 /// The key function section.
-fn key_functions(keys: &[KeyFunction]) -> Section {
+fn key_functions(analysis: &Analysis) -> Section {
     let note = text::paragraph(KEY_NOTE);
     let section = Section::new("Key Functions").with(note);
-    keys.iter().fold(section, with_key)
+    analysis
+        .key_functions
+        .iter()
+        .fold(section, |acc, key| with_key(acc, analysis, key))
 }
 
 /// Appends one key function.
@@ -241,16 +251,98 @@ fn key_functions(keys: &[KeyFunction]) -> Section {
 /// # Arguments
 ///
 /// * `section` - Section being built.
+/// * `analysis` - Completed analysis.
 /// * `key` - Key function.
 ///
 /// # Returns
 ///
 /// The extended section.
-fn with_key(section: Section, key: &KeyFunction) -> Section {
+fn with_key(section: Section, analysis: &Analysis, key: &KeyFunction) -> Section {
     let title = format!("{} at {}", key.name, text::hex(key.address));
     let section = section.with(Block::Subheading(title));
     let section = section.with(Block::Bullets(key.reasons.clone()));
-    section.with(Block::Code(key.listing.join("\n")))
+    let section = section.with(Block::Code(key.listing.join("\n")));
+    append_pseudocode(section, analysis, key.address)
+}
+
+/// Appends the recovered pseudo-C for a function.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `analysis` - Completed analysis.
+/// * `address` - Function entry address.
+///
+/// # Returns
+///
+/// The extended section.
+fn append_pseudocode(section: Section, analysis: &Analysis, address: u64) -> Section {
+    match decompiled(analysis, address) {
+        Some(code) => {
+            let titled = section.with(Block::Subheading("Recovered Pseudo-C".to_string()));
+            titled.with(Block::Code(code))
+        }
+        None => section,
+    }
+}
+
+/// Decompiles the function at an address, when available.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `address` - Function entry address.
+///
+/// # Returns
+///
+/// The pseudo-C listing, or `None`.
+fn decompiled(analysis: &Analysis, address: u64) -> Option<String> {
+    let binary = analysis.binary.as_ref()?;
+    let func = analysis.disassembly.as_ref()?.functions.get(&address)?;
+    if func.instructions > DECOMP_CAP {
+        return None;
+    }
+    Some(decompile(func, binary.arch))
+}
+
+/// Appends pseudo-C for a walkthrough function when it is selected.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `analysis` - Completed analysis.
+/// * `func` - Function to decompile.
+/// * `selected` - Addresses chosen for decompilation.
+///
+/// # Returns
+///
+/// The extended section.
+fn append_selected(
+    section: Section,
+    analysis: &Analysis,
+    func: &Function,
+    selected: &BTreeSet<u64>,
+) -> Section {
+    if selected.contains(&func.address) {
+        return append_pseudocode(section, analysis, func.address);
+    }
+    section
+}
+
+/// Selects the first functions to render as pseudo-C within the caps.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// The selected function entry addresses.
+fn decompile_targets(code: &Disassembly) -> BTreeSet<u64> {
+    let mut funcs: Vec<&Function> =
+        code.functions.values().filter(|f| f.instructions <= DECOMP_CAP).collect();
+    funcs.sort_by_key(|f| f.address);
+    funcs.into_iter().take(DECOMP_LIMIT).map(|f| f.address).collect()
 }
 
 /// Builds the exhaustive assembly walkthrough for all recovered functions.
@@ -264,14 +356,38 @@ fn with_key(section: Section, key: &KeyFunction) -> Section {
 ///
 /// The assembly walkthrough section.
 fn walkthrough(analysis: &Analysis, code: &Disassembly) -> Section {
-    let note = text::paragraph(WALKTHROUGH_NOTE);
-    let section = Section::new("Assembly Walkthrough & Instruction Analysis").with(note);
+    let section = walkthrough_heading();
     let ev = build_walkthrough_evidence(analysis, code);
+    let selected = decompile_targets(code);
+    let funcs = sorted_functions(code);
+    funcs.into_iter().fold(section, |s, f| {
+        with_function_walkthrough(s, analysis, ev.as_ref(), code, f, &selected)
+    })
+}
+
+/// Builds the walkthrough section heading.
+///
+/// # Returns
+///
+/// The section with its explanatory note.
+fn walkthrough_heading() -> Section {
+    let note = text::paragraph(WALKTHROUGH_NOTE);
+    Section::new("Assembly Walkthrough & Instruction Analysis").with(note)
+}
+
+/// Lists the recovered functions by address.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// The functions in ascending address order.
+fn sorted_functions(code: &Disassembly) -> Vec<&Function> {
     let mut funcs: Vec<&Function> = code.functions.values().collect();
     funcs.sort_by_key(|f| f.address);
-    funcs.into_iter().fold(section, |s, f| {
-        with_function_walkthrough(s, ev.as_ref(), code, f)
-    })
+    funcs
 }
 
 /// Builds the evidence resolver precomputed with the recovered call graph.
@@ -306,12 +422,15 @@ fn build_walkthrough_evidence<'a>(
 /// The extended section.
 fn with_function_walkthrough(
     section: Section,
+    analysis: &Analysis,
     ev: Option<&Evidence<'_>>,
     code: &Disassembly,
     func: &Function,
+    selected: &BTreeSet<u64>,
 ) -> Section {
     let section = append_func_heading(section, code, func);
     let section = append_raw_listing(section, func);
+    let section = append_selected(section, analysis, func, selected);
     let section = append_func_summary(section, ev, code, func);
     append_data_pools(section, code, func)
 }
@@ -365,7 +484,12 @@ fn append_raw_listing(section: Section, func: &Function) -> Section {
 ///
 /// Text such as `0x1000023a: movs r1, #0x2b`.
 fn format_line(line: &rea_engine::disasm::InstructionLine) -> String {
-    format!("{}: {}", text::hex(line.address), line.text)
+    let comment = if line.discussion.is_empty() {
+        String::new()
+    } else {
+        format!("  ; {}", line.discussion)
+    };
+    format!("{}: {}{comment}", text::hex(line.address), line.text)
 }
 
 /// Appends the plain-language summary of what the function does.
@@ -464,7 +588,16 @@ mod tests {
     fn test_key_functions_blocks() {
         let reasons = vec!["Program entry point".to_string()];
         let key = KeyFunction::new(0x1000, "entry".into(), 3, reasons);
-        assert_eq!(key_functions(&[key]).blocks.len(), 4);
+        let mut analysis = rea_engine::analyze("x", b"abc");
+        analysis.key_functions = vec![key];
+        assert_eq!(key_functions(&analysis).blocks.len(), 4);
+    }
+
+    /// Verifies that decompilation is skipped without a parsed binary.
+    #[test]
+    fn test_decompiled_without_binary() {
+        let analysis = rea_engine::analyze("x", b"abc");
+        assert!(decompiled(&analysis, 0x1000).is_none());
     }
 
     /// Verifies that data files produce no code sections.

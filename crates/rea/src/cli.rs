@@ -158,6 +158,7 @@ fn dispatch_inspect(cmd: &str, rest: &[String]) -> Option<ExitCode> {
         "info" => Some(dispatch_info(rest)),
         "strings" => Some(dispatch_strings(rest)),
         "decompile" => Some(dispatch_decompile(rest)),
+        "decrypt" => Some(dispatch_decrypt(rest)),
         "xrefs" => Some(dispatch_xrefs(rest)),
         _ => None,
     }
@@ -177,8 +178,7 @@ fn dispatch_named(cmd: &str, rest: &[String]) -> ExitCode {
     match cmd {
         "serve" => crate::mcp::serve_cmd(),
         "mcp" => dispatch_mcp(rest),
-        "mcp-setup" => crate::mcp::setup_cmd(),
-        "analyze" => dispatch_analyze(rest),
+        "analyze" | "analysis" => dispatch_analyze(rest),
         _ => dispatch_target(cmd, rest),
     }
 }
@@ -194,7 +194,48 @@ fn dispatch_named(cmd: &str, rest: &[String]) -> ExitCode {
 ///
 /// Command execution exit code.
 fn dispatch_subcommand(cmd: &str, rest: &[String]) -> ExitCode {
-    dispatch_inspect(cmd, rest).unwrap_or_else(|| dispatch_named(cmd, rest))
+    dispatch_inspect(cmd, rest)
+        .or_else(|| dispatch_inspect2(cmd, rest))
+        .or_else(|| dispatch_inspect3(cmd, rest))
+        .unwrap_or_else(|| dispatch_named(cmd, rest))
+}
+
+/// Dispatches emulation and format subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Exit code if matched, otherwise `None`.
+fn dispatch_inspect2(cmd: &str, rest: &[String]) -> Option<ExitCode> {
+    match cmd {
+        "dotnet" => Some(dispatch_dotnet(rest)),
+        "emulate" => Some(dispatch_emulate(rest)),
+        "unpack" => Some(dispatch_unpack(rest)),
+        _ => None,
+    }
+}
+
+/// Dispatches analysis subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Exit code if matched, otherwise `None`.
+fn dispatch_inspect3(cmd: &str, rest: &[String]) -> Option<ExitCode> {
+    match cmd {
+        "rules" => Some(dispatch_rules(rest)),
+        "audit" => Some(dispatch_audit(rest)),
+        "crypto" => Some(dispatch_crypto(rest)),
+        _ => None,
+    }
 }
 
 /// Dispatches mcp server or config subcommand.
@@ -273,6 +314,113 @@ fn dispatch_xrefs(rest: &[String]) -> ExitCode {
         [target, addr] => crate::inspect::xrefs_cmd(Path::new(target), addr),
         _ => usage_error(),
     }
+}
+
+/// Dispatches decrypt subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_decrypt(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::decrypt_cmd(Path::new(t)))
+}
+
+/// Dispatches dotnet subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_dotnet(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::dotnet_cmd(Path::new(t)))
+}
+
+/// Dispatches emulate subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_emulate(rest: &[String]) -> ExitCode {
+    match rest {
+        [target] => crate::inspect::emulate_cmd(Path::new(target), None),
+        [target, addr] => crate::inspect::emulate_cmd(Path::new(target), Some(addr)),
+        _ => usage_error(),
+    }
+}
+
+/// Dispatches unpack subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_unpack(rest: &[String]) -> ExitCode {
+    match rest {
+        [target] => crate::inspect::unpack_cmd(Path::new(target), None),
+        [target, addr] => crate::inspect::unpack_cmd(Path::new(target), Some(addr)),
+        _ => usage_error(),
+    }
+}
+
+/// Dispatches rules subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_rules(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::rules_cmd(Path::new(t)))
+}
+
+/// Dispatches audit subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_audit(rest: &[String]) -> ExitCode {
+    match rest {
+        [target] => crate::inspect::audit_cmd(Path::new(target), false),
+        [target, flag] if flag == "--sarif" => crate::inspect::audit_cmd(Path::new(target), true),
+        _ => usage_error(),
+    }
+}
+
+/// Dispatches crypto subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_crypto(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::crypto_cmd(Path::new(t)))
 }
 
 /// Dispatches analyze subcommand.
@@ -521,9 +669,10 @@ fn write_aux_docs(paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliErr
 fn write_primary_doc(
     paths: &ReportPaths,
     analysis: &Analysis,
+    bytes: &[u8],
     assess: Option<&str>,
 ) -> Result<(), CliError> {
-    let doc = compose::build(analysis, assess);
+    let doc = compose::build(analysis, bytes, assess);
     write_doc_pair(&paths.markdown, &paths.pdf, &doc)
 }
 
@@ -543,7 +692,9 @@ fn write_primary_doc(
 ///
 /// Returns [`CliError`] on write failure.
 fn emit_reports(target: &Path, paths: &ReportPaths, analysis: &Analysis) -> Result<(), CliError> {
-    write_primary_doc(paths, analysis, crate::agent::evaluate(analysis).as_deref())?;
+    let bytes = fs::read(target).unwrap_or_default();
+    let assess = crate::agent::evaluate(analysis, &bytes);
+    write_primary_doc(paths, analysis, &bytes, assess.as_deref())?;
     if analysis.firmware.is_some() {
         write_aux_docs(paths, analysis)?;
         crate::artifacts::write_all(target, analysis)?;
@@ -568,9 +719,30 @@ pub fn run(target: &Path) -> Result<ReportPaths, CliError> {
     reject_directory(target)?;
     eprintln!("rea: reverse engineering {}", target.display());
     let analysis = analyze_path(target).map_err(CliError::Engine)?;
+    let bytes = fs::read(target).unwrap_or_default();
     let paths = report_paths(target);
     emit_reports(target, &paths, &analysis)?;
+    write_json(&paths, &analysis, &bytes)?;
     Ok(paths)
+}
+
+/// Writes the machine-readable JSON report.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// Unit when successful.
+///
+/// # Errors
+///
+/// Returns [`CliError::Write`] when the file cannot be written.
+fn write_json(paths: &ReportPaths, analysis: &Analysis, bytes: &[u8]) -> Result<(), CliError> {
+    write(&paths.json, crate::json::report(analysis, bytes).as_bytes())
 }
 
 /// Refuses directory targets.

@@ -118,6 +118,33 @@ pub mod unpack;
 /// Sink-based vulnerability audit with SARIF export.
 pub mod vulns;
 
+/// WebAssembly module parsing and validation.
+pub mod wasm;
+
+/// SQLite database schema and row recovery.
+pub mod sqlite;
+
+/// ELF core dump and recorded crash analysis.
+pub mod core;
+
+/// Ethereum Virtual Machine bytecode analysis.
+pub mod evm;
+
+/// Apple property list and application bundle analysis.
+pub mod plist;
+
+/// JavaScript source map resolution.
+pub mod sourcemap;
+
+/// Network capture analysis for PCAP and HAR.
+pub mod netcap;
+
+/// Flutter application and APK native library analysis.
+pub mod flutter;
+
+/// MS-DOS MZ executable analysis and 16-bit disassembly.
+pub mod dos;
+
 /// Calendar formatting of timestamps.
 mod time;
 
@@ -153,16 +180,29 @@ pub mod decompiler;
 
 pub use analysis::{analyze, analyze_path, Analysis};
 pub use asar::{AsarIpcChannel, AsarSecret, AsarTriage, AsarWarning};
+pub use core::{format_core_summary, is_core, parse_core, CoreDump};
 pub use decompiler::decompile;
 pub use decrypt::{recover, Decoded};
 pub use detect::Format;
 pub use dex::{format_apk_summary, parse_apk_metadata, parse_dex_header, ApkMetadata, DexMetadata};
 pub use discover::Finding;
+pub use dos::{format_dos_summary, is_dos_exe, parse_dos, DosHeader};
 pub use dotnet::{format_dotnet_summary, parse_dotnet_metadata, DotNetAssemblyRef, DotNetMetadata};
 pub use emulate::{Emulation, Stop};
 pub use error::EngineError;
+pub use evm::{decode_hex, format_evm_summary, is_hex_text, parse_evm, EvmBytecode};
+pub use flutter::{format_flutter_summary, is_zip, parse_flutter, FlutterApk};
 pub use forensics::{
     all_exploit_chains, all_vulnerabilities, format_findings_json, ExploitChain, Vulnerability,
 };
 pub use go::{format_go_summary, parse_go_metadata, GoMetadata, GoModule};
+pub use netcap::{format_har_summary, format_pcap_summary, is_har, is_pcap, parse_har, parse_pcap};
+pub use plist::{
+    analyze_bundle, format_bundle_summary, format_plist_summary, is_plist, parse_plist,
+};
+pub use sourcemap::{
+    find_source_map_url, format_sourcemap_summary, is_source_map, parse_sourcemap,
+};
+pub use sqlite::{format_sqlite_summary, is_sqlite, parse_sqlite, SqliteDb};
 pub use squashfs::{FirmwareTriage, SecurityArtifact, SquashfsMeta};
+pub use wasm::{format_wasm_summary, is_wasm, parse_wasm, WasmModule};

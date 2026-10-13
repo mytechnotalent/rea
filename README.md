@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v4.0.0
+# Reverse Engineering Assistant (REA) v5.0.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,20 +18,22 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v4.0.0
+# New in v5.0.0
 
-REA v4.0.0 is a native pure-Rust reverse engineering engine with a first-class one-shot workflow and a Model Context Protocol (MCP) server for AI coding agents. Highlights:
+REA v5.0.0 adds ten new artifact and format analyzers on top of the pure-Rust engine, and exposes every one as an MCP tool:
 
-- **Pure-Rust Native Decompiler.** Recovered pseudo-C for every function from a p-code intermediate representation and control-flow graph, with structured control flow (loops, if/else), constant folding, stack-slot naming, cross-block copy propagation, and dead-store elimination. The original assembly is cited per line.
-- **Cross-Architecture.** x86/x86-64, ARM Cortex-M (Thumb-2) and Cortex-A (AArch64), MIPS, RISC-V, PowerPC, SPARC, SuperH, AVR, MSP430, 68000, Xtensa, LoongArch — no Ghidra, IDA, Hopper, or Java required.
-- **Emulation-Driven Unpacking.** API-stubbed sandboxed emulation decrypts protected regions (OEP detection, IAT rebuild, region dump, multi-stage convergence) on x86, ARM, MIPS, and RISC-V.
-- **Capability Rules (capa-class).** An embedded rule pack with MITRE ATT&CK and MBC mapping over imports, strings, and instructions.
-- **Vulnerability Audit + SARIF.** Sink-based detection with CWE identifiers, severity, and SARIF 2.1.0 export (`rea audit --sarif`).
-- **Cipher & Crypto Recovery.** Recovers strings hidden by single-byte ciphers and detects cryptographic constants (AES, MD5, SHA, CRC32, TEA, ChaCha, base64).
-- **Pure-Rust Runtime Forensics.** Go `pclntab`/`modinfo`, .NET ECMA-335 CIL (with token→name resolution), and Android APK/DEX inspection.
-- **MCP Server (18 tools).** `open_binary`, `binary_session`, `list_functions`, `decompile_function`, `find_xrefs`, `search_strings`, `analyze_firmware`, `analyze_javascript`, `generate_dossier`, `inspect_go`, `inspect_dotnet`, `inspect_android`, `run_rules`, `audit`, `inspect_crypto`, `decrypt_strings`, `emulate`, `unpack`.
-- **Turnkey Agent Setup.** `rea mcp --setup` writes the OpenCode/agent configuration for the current binary; `rea mcp --config` prints ready-to-paste snippets for Claude Code, OpenCode, Claude Desktop, Cursor, and Windsurf.
-- **Machine-Readable Output.** Every one-shot writes `re-<name>.md`, `re-<name>.pdf`, and `re-<name>.json`.
+- **WebAssembly.** Section parsing, import/export signatures, and function counts for `.wasm` modules.
+- **SQLite.** Header, schema (tables, columns, indexes, views, triggers), and sampled rows from `.db`/`.sqlite` files.
+- **Core Dumps & Crashes.** ELF core parsing with the terminating signal, captured registers, loadable mappings, and mapped files.
+- **EVM Bytecode.** Dispatch selector recovery, jump targets, notable opcodes, and inferred mutability.
+- **Apple Property Lists & Bundles.** Binary and XML plist decoding plus bundle metadata (identifier, version, executable, minimum OS).
+- **Flutter & APK.** Zip central-directory parsing, per-ABI native library digests, and Flutter asset inventory.
+- **Network Captures.** PCAP packet iteration with HTTP request/host extraction, plus HAR request/response summaries.
+- **JavaScript Source Maps.** Source resolution, mapping statistics, and `sourceMappingURL` discovery.
+- **MS-DOS (MZ).** Header fields, relocation table, and 16-bit entry-point disassembly.
+- **One-Command Setup.** `rea mcp --setup` now installs a matching agent skill, registers MCP servers, and backs up any file it replaces.
+
+Retained from v4.0.0: the pure-Rust decompiler (structured control flow, constant folding, cross-block copy propagation, dead-store elimination), cross-architecture disassembly and emulation, emulation-driven unpacking, capa-class rules with MITRE ATT&CK/MBC, vulnerability audit with SARIF, cipher and crypto-constant recovery, Go/.NET/Android forensics, the 27-tool MCP server, and machine-readable JSON output.
 
 <br>
 
@@ -48,6 +50,7 @@ REA v4.0.0 is a native pure-Rust reverse engineering engine with a first-class o
 - **P-Code Emulation.** Sandboxed software emulator executes target code without native host execution, unmasking runtime strings, keys, and decrypted payloads.
 - **Protectors & Packing.** High-entropy mapping, abnormal memory layouts, W^X violations, and signature matching for commercial protectors.
 - **Indicators.** Structured extraction of URLs, IPs, emails, registry keys, file paths, commands, and user agents.
+- **Artifact Formats.** WebAssembly, SQLite, ELF core dumps, EVM bytecode, Apple property lists, Flutter APKs, PCAP/HAR captures, JavaScript source maps, and MS-DOS MZ executables.
 - **Strict Safety.** `#![forbid(unsafe_code)]` enforced across the entire codebase. Malformed or hostile inputs can never compromise the host.
 
 <br>
@@ -67,6 +70,15 @@ REA v4.0.0 is a native pure-Rust reverse engineering engine with a first-class o
 | SquashFS 4.0 Filesystems | In-memory | Unpacking, credential discovery, sub-target triage |
 | Raw ARM Cortex-M firmware | Vector table, flash base | ARM Thumb disassembly and handler mapping |
 | ARM Cortex-A (Linux, Android, iOS) | Full (ELF/Mach-O) | ARMv7-A and ARMv8-A/AArch64 disassembly, call graphs |
+| WebAssembly modules (`.wasm`) | Full | Sections, imports, exports, function counts |
+| SQLite databases (`.db`/`.sqlite`) | Full | Header, tables, columns, views, triggers, sampled rows |
+| ELF core dumps | Full | Signal, registers, loadable mappings, mapped files |
+| EVM bytecode (raw or hex) | Full | Selectors, jump targets, notable opcodes, mutability |
+| Apple property lists & bundles | Full | Binary/XML plist, bundle identifier and version |
+| Flutter APKs & zip archives | Full | Per-ABI native libraries, digests, Flutter assets |
+| PCAP and HAR captures | Full | Packets, HTTP requests, hosts, HAR entries |
+| JavaScript source maps | Full | Sources, mapping statistics, `sourceMappingURL` |
+| MS-DOS `MZ` executables | Full | Header, relocations, 16-bit entry disassembly |
 | Any raw or unknown file | Identity, hashes, entropy | String extraction, indicators, entropy mapping |
 
 Non-x86 disassembly and emulation are powered by embedded SLEIGH processor specifications compiled directly by a pure-Rust engine. No Ghidra, Java, Python, or external command-line tools are required.
@@ -106,7 +118,6 @@ Focused subcommands are also available:
 
 ```bash
 rea decompile <target> [symbol|0xaddr]   # recovered pseudo-C
-rea disasm                              # (see decompile) assembly walkthrough
 rea strings <target>                    # extracted strings
 rea decrypt <target>                    # strings hidden by single-byte ciphers
 rea crypto <target>                     # cryptographic constants
@@ -115,6 +126,15 @@ rea audit <target> [--sarif]            # vulnerability sinks + SARIF
 rea unpack <target> [0xaddr]            # emulation-driven unpacking
 rea emulate <target> [0xaddr]           # sandboxed emulation
 rea dotnet <assembly>                   # .NET CIL disassembly
+rea wasm <module.wasm>                  # WebAssembly sections and links
+rea sqlite <database>                   # SQLite schema and rows
+rea coredump <core>                     # ELF core signal, registers, mappings
+rea evm <bytecode>                      # EVM selectors and mutability
+rea plist <Info.plist>                  # property list and bundle metadata
+rea sourcemap <app.js.map>              # source map sources and statistics
+rea pcap <capture.pcap>                 # packets, HTTP requests, hosts
+rea flutter <app.apk>                   # per-ABI native libraries and assets
+rea dos <program.exe>                   # MZ header and 16-bit entry code
 rea analyze <target>                    # alias for the one-shot
 ```
 
@@ -194,7 +214,7 @@ claude mcp add rea "$PWD/rea" serve
 claude mcp add rea "$PWD/rea" serve
 ```
 
-The server exposes 18 tools: `open_binary`, `binary_session`, `list_functions`, `decompile_function`, `find_xrefs`, `search_strings`, `analyze_firmware`, `analyze_javascript`, `generate_dossier`, `inspect_go`, `inspect_dotnet`, `inspect_android`, `run_rules`, `audit`, `inspect_crypto`, `decrypt_strings`, `emulate`, `unpack`.
+The server exposes 27 tools: `open_binary`, `binary_session`, `list_functions`, `decompile_function`, `find_xrefs`, `search_strings`, `analyze_firmware`, `analyze_javascript`, `generate_dossier`, `inspect_go`, `inspect_dotnet`, `inspect_android`, `run_rules`, `audit`, `inspect_crypto`, `decrypt_strings`, `emulate`, `unpack`, `inspect_wasm`, `inspect_sqlite`, `inspect_coredump`, `inspect_evm`, `inspect_plist`, `inspect_sourcemap`, `inspect_capture`, `inspect_flutter`, `inspect_dos`.
 
 <br>
 

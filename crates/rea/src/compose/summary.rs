@@ -341,7 +341,12 @@ mod tests {
     /// Verifies the overview of a malformed executable.
     #[test]
     fn test_broken_overview() {
-        let analysis = rea_engine::analyze("bad.exe", b"MZ\x00");
+        let mut bad = vec![0u8; 0x44];
+        bad[0] = b'M';
+        bad[1] = b'Z';
+        bad[0x3c] = 0x40;
+        bad[0x40..0x44].copy_from_slice(b"PE\x00\x00");
+        let analysis = rea_engine::analyze("bad.exe", &bad);
         assert!(overview(&analysis).contains("malformed"));
     }
 

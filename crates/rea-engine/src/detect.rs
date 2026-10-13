@@ -68,13 +68,28 @@ pub enum Format {
     /// Electron archive (ASAR).
     Asar,
 
+    /// WebAssembly binary module.
+    Wasm,
+
+    /// SQLite database file.
+    Sqlite,
+
+    /// Apple property list.
+    Plist,
+
+    /// Packet capture file.
+    Pcap,
+
+    /// MS-DOS MZ executable.
+    Dos,
+
     /// Unrecognized content.
     #[default]
     Unknown,
 }
 
 /// Leading-byte signatures checked in order.
-const SIGNATURES: [(&[u8], Format); 14] = [
+const SIGNATURES: [(&[u8], Format); 18] = [
     (b"MZ", Format::Pe),
     (b"\x7fELF", Format::Elf),
     (&[0xfe, 0xed, 0xfa, 0xce], Format::MachO),
@@ -89,10 +104,14 @@ const SIGNATURES: [(&[u8], Format); 14] = [
     (&[0x27, 0x05, 0x19, 0x56], Format::UImage),
     (b"hsqs", Format::Squashfs),
     (b"sqsh", Format::Squashfs),
+    (b"\x00asm", Format::Wasm),
+    (b"SQLite format 3\x00", Format::Sqlite),
+    (b"bplist00", Format::Plist),
+    (b"\xd4\xc3\xb2\xa1", Format::Pcap),
 ];
 
 /// Human-readable format names.
-const LABELS: [(Format, &str); 14] = [
+const LABELS: [(Format, &str); 19] = [
     (Format::Pe, "Portable Executable (PE)"),
     (Format::Elf, "Executable and Linkable Format (ELF)"),
     (Format::MachO, "Mach-O"),
@@ -106,6 +125,11 @@ const LABELS: [(Format, &str); 14] = [
     (Format::UImage, "U-Boot legacy image (uImage)"),
     (Format::Squashfs, "SquashFS filesystem"),
     (Format::Asar, "Electron Archive (ASAR)"),
+    (Format::Wasm, "WebAssembly module"),
+    (Format::Sqlite, "SQLite database"),
+    (Format::Plist, "Apple property list"),
+    (Format::Pcap, "Packet capture (pcap)"),
+    (Format::Dos, "MS-DOS executable"),
     (Format::Unknown, "Unrecognized data"),
 ];
 
@@ -166,6 +190,7 @@ fn check_fallback(bytes: &[u8], format: Format) -> Format {
     match format {
         Format::Unknown if is_cortex_m(bytes) => Format::CortexM,
         Format::Unknown if is_asar(bytes) => Format::Asar,
+        Format::Unknown if crate::plist::is_xml_plist(bytes) => Format::Plist,
         _ => format,
     }
 }
@@ -258,8 +283,25 @@ fn le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
 ///
 /// # Returns
 ///
-/// [`Format::JavaClass`] when the architecture count is implausible.
+/// The refined format.
 fn refine(bytes: &[u8], format: Format) -> Format {
+    if format == Format::Pe && !crate::dos::is_pe_image(bytes) {
+        return Format::Dos;
+    }
+    refine_fat(bytes, format)
+}
+
+/// Separates Java class files from universal Mach-O, which share a magic.
+///
+/// # Arguments
+///
+/// * `bytes` - Start of the target file.
+/// * `format` - Signature-based guess.
+///
+/// # Returns
+///
+/// [`Format::JavaClass`] when the architecture count is implausible.
+fn refine_fat(bytes: &[u8], format: Format) -> Format {
     let fat = format == Format::MachOUniversal;
     let java = fat && be_u32(bytes, 4).is_some_and(|c| c > MAX_FAT_ARCHES);
     if java {
@@ -292,7 +334,7 @@ mod tests {
     /// Verifies detection of the main executable formats.
     #[test]
     fn test_detect_executables() {
-        assert_eq!(detect(b"MZ\x90\x00"), Format::Pe);
+        assert_eq!(detect(b"MZ\x90\x00"), Format::Dos);
         assert_eq!(detect(b"\x7fELF\x02"), Format::Elf);
         assert_eq!(detect(&[0xcf, 0xfa, 0xed, 0xfe]), Format::MachO);
     }
@@ -323,6 +365,28 @@ mod tests {
     fn test_detect_unknown() {
         assert_eq!(detect(b"hello"), Format::Unknown);
         assert_eq!(detect(b""), Format::Unknown);
+    }
+
+    /// Verifies WebAssembly detection.
+    #[test]
+    fn test_detect_wasm() {
+        assert_eq!(detect(b"\x00asm\x01\x00\x00\x00"), Format::Wasm);
+    }
+
+    /// Verifies SQLite detection.
+    #[test]
+    fn test_detect_sqlite() {
+        assert_eq!(detect(b"SQLite format 3\x00"), Format::Sqlite);
+    }
+
+    /// Verifies property list detection.
+    #[test]
+    fn test_detect_plist() {
+        assert_eq!(detect(b"bplist00\xd1\x01"), Format::Plist);
+        assert_eq!(
+            detect(b"<?xml version=\"1.0\"?><plist version=\"1.0\">"),
+            Format::Plist
+        );
     }
 
     /// Verifies labels and native classification.

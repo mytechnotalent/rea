@@ -197,7 +197,23 @@ fn tool_catalog() -> Value {
     all.extend(advanced_tools().as_array().cloned().unwrap_or_default());
     all.extend(runtime_tools().as_array().cloned().unwrap_or_default());
     all.extend(analysis_tools().as_array().cloned().unwrap_or_default());
+    all.extend(format_tools().as_array().cloned().unwrap_or_default());
     Value::Array(all)
+}
+
+/// Returns format-specific inspection tools.
+///
+/// # Returns
+///
+/// JSON array of format tool declarations.
+fn format_tools() -> Value {
+    json!([
+        {"name": "inspect_wasm", "description": "Parses a WebAssembly module: sections, imports, and exports.", "inputSchema": {"type": "object"}}, {"name": "inspect_sqlite", "description": "Reads SQLite schema and sampled rows.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_coredump", "description": "Parses an ELF core dump: signal, registers, and mappings.", "inputSchema": {"type": "object"}}, {"name": "inspect_evm", "description": "Disassembles EVM bytecode and recovers selectors.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_plist", "description": "Parses an Apple property list and bundle metadata.", "inputSchema": {"type": "object"}}, {"name": "inspect_sourcemap", "description": "Parses a JavaScript source map and lists sources.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_capture", "description": "Parses a pcap or HAR capture.", "inputSchema": {"type": "object"}}, {"name": "inspect_flutter", "description": "Inspects a Flutter APK per-ABI libraries and assets.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_dos", "description": "Parses an MS-DOS MZ executable and disassembles its entry.", "inputSchema": {"type": "object"}}
+    ])
 }
 
 /// Wraps tool result into standard MCP content block.
@@ -297,7 +313,36 @@ fn dispatch_tool(s: &mut ServerSession, name: &str, args: &Value) -> String {
     dispatch_basic_tool(s, name, args)
         .or_else(|| dispatch_runtime_tool(s, name))
         .or_else(|| dispatch_analysis_tool(s, name, args))
+        .or_else(|| dispatch_format_tool(s, name))
         .unwrap_or_else(|| dispatch_adv_tool(s, name, args))
+}
+
+/// Dispatches format-specific inspection tools.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+/// * `name` - Tool name.
+///
+/// # Returns
+///
+/// Result string if matched, otherwise `None`.
+fn dispatch_format_tool(s: &ServerSession, name: &str) -> Option<String> {
+    format_handler(name).map(|handler| handler(s))
+}
+
+/// Maps a format tool name to its handler.
+///
+/// # Arguments
+///
+/// * `name` - Tool name.
+///
+/// # Returns
+///
+/// The handler function, or `None`.
+fn format_handler(name: &str) -> Option<FormatHandler> {
+    let found = FORMAT_HANDLERS.iter().find(|(tool, _)| *tool == name);
+    found.map(|(_, handler)| *handler)
 }
 
 /// Dispatches capability, vulnerability, crypto, and emulation tools.
@@ -848,6 +893,238 @@ fn call_android(s: &ServerSession) -> String {
     )
 }
 
+/// Message returned when no target is open.
+const NOT_OPEN: &str = "No target opened.";
+
+/// Signature of a format tool handler.
+type FormatHandler = fn(&ServerSession) -> String;
+
+/// Format tool names and their handlers.
+const FORMAT_HANDLERS: [(&str, FormatHandler); 9] = [
+    ("inspect_wasm", call_wasm),
+    ("inspect_sqlite", call_sqlite),
+    ("inspect_coredump", call_core),
+    ("inspect_evm", call_evm),
+    ("inspect_plist", call_plist),
+    ("inspect_sourcemap", call_sourcemap),
+    ("inspect_capture", call_capture),
+    ("inspect_flutter", call_flutter),
+    ("inspect_dos", call_dos),
+];
+
+/// Tool handler for `inspect_wasm`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted WebAssembly summary.
+fn call_wasm(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::wasm::parse_wasm(bytes).map_or_else(
+        || "Not a WebAssembly module.".to_string(),
+        |m| rea_engine::wasm::format_wasm_summary(&m),
+    )
+}
+
+/// Tool handler for `inspect_sqlite`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted SQLite summary.
+fn call_sqlite(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::sqlite::parse_sqlite(bytes).map_or_else(
+        || "Not a SQLite database.".to_string(),
+        |db| rea_engine::sqlite::format_sqlite_summary(&db),
+    )
+}
+
+/// Tool handler for `inspect_coredump`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted core dump summary.
+fn call_core(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::core::parse_core(bytes).map_or_else(
+        || "Not an ELF core dump.".to_string(),
+        |c| rea_engine::core::format_core_summary(&c),
+    )
+}
+
+/// Tool handler for `inspect_evm`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted EVM summary.
+fn call_evm(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::evm::format_evm_summary(&rea_engine::evm::parse_evm(bytes))
+}
+
+/// Tool handler for `inspect_plist`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted property list summary.
+fn call_plist(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::plist::parse_plist(bytes).map_or_else(
+        || "Not a property list.".to_string(),
+        |p| rea_engine::plist::format_plist_summary(&p),
+    )
+}
+
+/// Tool handler for `inspect_sourcemap`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted source map summary.
+fn call_sourcemap(s: &ServerSession) -> String {
+    let Some(bytes) = bytes_of(s) else {
+        return NOT_OPEN.to_string();
+    };
+    if let Some(map) = rea_engine::sourcemap::parse_sourcemap(bytes) {
+        return rea_engine::sourcemap::format_sourcemap_summary(&map);
+    }
+    no_source_map(bytes)
+}
+
+/// Reports a `sourceMappingURL` directive when no source map parsed.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// A formatted summary.
+fn no_source_map(bytes: &[u8]) -> String {
+    rea_engine::sourcemap::find_source_map_url(bytes).map_or_else(
+        || "Not a source map.".to_string(),
+        |url| format!("sourceMappingURL: {url}"),
+    )
+}
+
+/// Tool handler for `inspect_capture`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted capture summary.
+fn call_capture(s: &ServerSession) -> String {
+    let Some(bytes) = bytes_of(s) else {
+        return NOT_OPEN.to_string();
+    };
+    if let Some(pcap) = rea_engine::netcap::parse_pcap(bytes) {
+        return rea_engine::netcap::format_pcap_summary(&pcap);
+    }
+    no_capture(bytes)
+}
+
+/// Reports a HAR summary when no pcap parsed.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// A formatted summary.
+fn no_capture(bytes: &[u8]) -> String {
+    rea_engine::netcap::parse_har(bytes).map_or_else(
+        || "Not a capture.".to_string(),
+        |h| rea_engine::netcap::format_har_summary(&h),
+    )
+}
+
+/// Returns the raw bytes of the active target.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// The target bytes, or `None`.
+fn bytes_of(s: &ServerSession) -> Option<&[u8]> {
+    s.bytes.as_deref()
+}
+
+/// Tool handler for `inspect_flutter`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted Flutter summary.
+fn call_flutter(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::flutter::parse_flutter(bytes).map_or_else(
+        || "Not a zip archive.".to_string(),
+        |apk| rea_engine::flutter::format_flutter_summary(&apk),
+    )
+}
+
+/// Tool handler for `inspect_dos`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted DOS summary.
+fn call_dos(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::dos::parse_dos(bytes).map_or_else(
+        || "Not an MS-DOS executable.".to_string(),
+        |h| rea_engine::dos::format_dos_summary(&h),
+    )
+}
+
 /// Handles one incoming JSON-RPC line from client.
 ///
 /// # Arguments
@@ -953,6 +1230,7 @@ fn insert_rea_server(root: &mut Value) {
 ///
 /// * `path` - Destination file path.
 fn write_mcp_config_file(path: &Path) {
+    backup_existing(path);
     let mut root = load_or_init_mcp_config(path);
     insert_rea_server(&mut root);
     let content = serde_json::to_string_pretty(&root).unwrap_or_default();
@@ -961,6 +1239,7 @@ fn write_mcp_config_file(path: &Path) {
 
 /// Writes `OpenCode` `opencode.jsonc` with the REA server registered.
 fn write_opencode_config() {
+    backup_existing(Path::new("opencode.jsonc"));
     let raw = std::fs::read_to_string("opencode.jsonc").unwrap_or_default();
     let mut root = serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({}));
     if let Some(map) = root.as_object_mut() {
@@ -968,6 +1247,41 @@ fn write_opencode_config() {
     }
     let content = serde_json::to_string_pretty(&root).unwrap_or_default();
     let _ = std::fs::write("opencode.jsonc", content);
+}
+
+/// Agent skill describing the REA investigation workflow.
+const SKILL_CONTENT: &str = "# REA Reverse Engineering\n\nUse the `rea` MCP server to inspect local binaries, firmware, and artifacts.\n\n## Tools\n- `open_binary` then `binary_session` for identity and mitigations.\n- `list_functions` and `decompile_function` for code recovery.\n- `run_rules` and `audit` for capabilities and vulnerabilities.\n- `inspect_crypto`, `decrypt_strings`, and `emulate` for crypto and runtime strings.\n- `unpack`, `inspect_go`, `inspect_dotnet`, and `inspect_android` for format work.\n\n## Method\n1. Identify the target and its format.\n2. Recover functions and decompile the entry point.\n3. Run rules and the vulnerability audit.\n4. Recover crypto and runtime strings.\n5. Summarize findings with the evidence and the limitations.\n";
+
+/// Backs up an existing file next to itself.
+///
+/// # Arguments
+///
+/// * `path` - File to back up.
+fn backup_existing(path: &Path) {
+    if path.exists() {
+        let backup = path.with_extension("bak");
+        let _ = std::fs::copy(path, &backup);
+    }
+}
+
+/// Writes a file, backing up any existing file first.
+///
+/// # Arguments
+///
+/// * `path` - Destination path.
+/// * `content` - File content.
+fn install_file(path: &Path, content: &str) {
+    backup_existing(path);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, content);
+    println!("✓ wrote {}", path.display());
+}
+
+/// Installs the REA agent skill file.
+fn install_skill() {
+    install_file(Path::new(".opencode/skills/rea/SKILL.md"), SKILL_CONTENT);
 }
 
 /// Runs turnkey setup for Claude Code and `OpenCode`.
@@ -979,10 +1293,11 @@ fn write_opencode_config() {
 pub fn setup_cmd() -> ExitCode {
     write_mcp_config_file(Path::new("mcp_config.json"));
     write_opencode_config();
+    install_skill();
     println!("✓ Turnkey OpenCode / AI Agent MCP configuration written to ./mcp_config.json");
     println!("✓ OpenCode MCP registration written to ./opencode.jsonc");
-    println!("✓ Turnkey Claude Code CLI setup command:");
-    println!("  claude mcp add rea rea serve");
+    println!("✓ Agent skill written to ./.opencode/skills/rea/SKILL.md");
+    println!("✓ Claude Code CLI setup command: claude mcp add rea rea serve");
     ExitCode::SUCCESS
 }
 
@@ -996,7 +1311,7 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 18);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 27);
     }
 
     /// Verifies runtime tool handlers reject empty sessions.
@@ -1015,5 +1330,17 @@ mod tests {
         assert_eq!(entry["rea"]["type"], "local");
         assert_eq!(entry["rea"]["enabled"], true);
         assert_eq!(entry["rea"]["command"].as_array().map_or(0, Vec::len), 2);
+    }
+
+    /// Verifies the skill installer backs up existing files.
+    #[test]
+    fn test_install_file_backs_up() {
+        let dir = std::env::temp_dir().join("rea_skill_install_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("SKILL.md");
+        let _ = std::fs::write(&path, "old");
+        install_file(&path, "new");
+        assert!(dir.join("SKILL.bak").exists());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
     }
 }

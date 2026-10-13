@@ -405,7 +405,12 @@ mod tests {
     /// Verifies that malformed executables record a load error.
     #[test]
     fn test_analyze_records_load_error() {
-        let analysis = analyze("bad.exe", b"MZ\x00\x01");
+        let mut bad = vec![0u8; 0x44];
+        bad[0] = b'M';
+        bad[1] = b'Z';
+        bad[0x3c] = 0x40;
+        bad[0x40..0x44].copy_from_slice(b"PE\x00\x00");
+        let analysis = analyze("bad.exe", &bad);
         assert!(analysis.load_error.is_some());
     }
 

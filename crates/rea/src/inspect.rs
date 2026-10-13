@@ -408,6 +408,541 @@ fn print_methods(binary: &rea_engine::model::Binary, bytes: &[u8]) {
     }
 }
 
+/// Reports WebAssembly module structure.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn wasm_cmd(path: &Path) -> ExitCode {
+    let Some(module) = load_wasm(path) else {
+        eprintln!("rea wasm: not a WebAssembly module");
+        return ExitCode::FAILURE;
+    };
+    report_wasm(&module)
+}
+
+/// Reads and parses a WebAssembly module.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Recovered module inventory, or `None`.
+fn load_wasm(path: &Path) -> Option<rea_engine::wasm::WasmModule> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::wasm::parse_wasm(&bytes)
+}
+
+/// Prints a WebAssembly summary and details.
+///
+/// # Arguments
+///
+/// * `module` - Recovered module inventory.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_wasm(module: &rea_engine::wasm::WasmModule) -> ExitCode {
+    print!("{}", rea_engine::wasm::format_wasm_summary(module));
+    print_wasm_sections(module);
+    print_wasm_links(module);
+    ExitCode::SUCCESS
+}
+
+/// Prints WebAssembly section headers.
+///
+/// # Arguments
+///
+/// * `module` - Recovered module inventory.
+fn print_wasm_sections(module: &rea_engine::wasm::WasmModule) {
+    for section in &module.sections {
+        println!(
+            "section {} id={} size={}",
+            section.name, section.id, section.size
+        );
+    }
+}
+
+/// Prints WebAssembly imports and exports.
+///
+/// # Arguments
+///
+/// * `module` - Recovered module inventory.
+fn print_wasm_links(module: &rea_engine::wasm::WasmModule) {
+    for import in &module.imports {
+        let module_name = &import.module;
+        let name = &import.name;
+        println!("import {module_name}::{name} ({})", import.kind);
+    }
+    for export in &module.exports {
+        println!("export {} ({})", export.name, export.kind);
+    }
+}
+
+/// Reports SQLite schema and sampled rows.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn sqlite_cmd(path: &Path) -> ExitCode {
+    let Some(db) = load_sqlite(path) else {
+        eprintln!("rea sqlite: not a SQLite database");
+        return ExitCode::FAILURE;
+    };
+    report_sqlite(&db)
+}
+
+/// Reads and parses a SQLite database.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Recovered database inventory, or `None`.
+fn load_sqlite(path: &Path) -> Option<rea_engine::sqlite::SqliteDb> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::sqlite::parse_sqlite(&bytes)
+}
+
+/// Prints a SQLite summary, columns, and rows.
+///
+/// # Arguments
+///
+/// * `db` - Recovered database inventory.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_sqlite(db: &rea_engine::sqlite::SqliteDb) -> ExitCode {
+    print!("{}", rea_engine::sqlite::format_sqlite_summary(db));
+    print_sqlite_columns(db);
+    print_sqlite_rows(db);
+    ExitCode::SUCCESS
+}
+
+/// Prints recovered SQLite columns.
+///
+/// # Arguments
+///
+/// * `db` - Recovered database inventory.
+fn print_sqlite_columns(db: &rea_engine::sqlite::SqliteDb) {
+    for column in &db.columns {
+        println!("column {} {}", column.name, column.kind);
+    }
+}
+
+/// Prints sampled SQLite rows.
+///
+/// # Arguments
+///
+/// * `db` - Recovered database inventory.
+fn print_sqlite_rows(db: &rea_engine::sqlite::SqliteDb) {
+    for row in &db.rows {
+        println!("row {row}");
+    }
+}
+
+/// Reports an ELF core dump and its crash state.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn core_cmd(path: &Path) -> ExitCode {
+    let Some(core) = load_core(path) else {
+        eprintln!("rea coredump: not an ELF core dump");
+        return ExitCode::FAILURE;
+    };
+    report_core(&core)
+}
+
+/// Reads and parses an ELF core dump.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Recovered core inventory, or `None`.
+fn load_core(path: &Path) -> Option<rea_engine::core::CoreDump> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::core::parse_core(&bytes)
+}
+
+/// Prints a core summary, registers, and mappings.
+///
+/// # Arguments
+///
+/// * `core` - Recovered core inventory.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_core(core: &rea_engine::core::CoreDump) -> ExitCode {
+    print!("{}", rea_engine::core::format_core_summary(core));
+    print_core_registers(core);
+    print_core_mappings(core);
+    ExitCode::SUCCESS
+}
+
+/// Prints captured registers.
+///
+/// # Arguments
+///
+/// * `core` - Recovered core inventory.
+fn print_core_registers(core: &rea_engine::core::CoreDump) {
+    for (name, value) in &core.registers {
+        println!("{name} = 0x{value:x}");
+    }
+}
+
+/// Prints loadable mappings.
+///
+/// # Arguments
+///
+/// * `core` - Recovered core inventory.
+fn print_core_mappings(core: &rea_engine::core::CoreDump) {
+    for mapping in &core.mappings {
+        println!(
+            "0x{:x} {} size={}",
+            mapping.start, mapping.flags, mapping.size
+        );
+    }
+}
+
+/// Reports EVM bytecode selectors and capabilities.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn evm_cmd(path: &Path) -> ExitCode {
+    let Ok(bytes) = fs::read(path) else {
+        eprintln!("rea evm: failed to read target");
+        return ExitCode::FAILURE;
+    };
+    report_evm(&rea_engine::evm::parse_evm(&evm_code(&bytes)))
+}
+
+/// Resolves bytecode from a file, decoding hexadecimal text when present.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw file bytes.
+///
+/// # Returns
+///
+/// The decoded bytecode.
+fn evm_code(bytes: &[u8]) -> Vec<u8> {
+    if rea_engine::evm::is_hex_text(bytes) {
+        let text = String::from_utf8_lossy(bytes);
+        rea_engine::evm::decode_hex(&text).unwrap_or_default()
+    } else {
+        bytes.to_vec()
+    }
+}
+
+/// Prints an EVM summary and disassembly.
+///
+/// # Arguments
+///
+/// * `evm` - Recovered inventory.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_evm(evm: &rea_engine::evm::EvmBytecode) -> ExitCode {
+    print!("{}", rea_engine::evm::format_evm_summary(evm));
+    for line in &evm.opcodes {
+        println!("{line}");
+    }
+    ExitCode::SUCCESS
+}
+
+/// Reports property list contents and bundle metadata.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn plist_cmd(path: &Path) -> ExitCode {
+    let Some(plist) = load_plist(path) else {
+        eprintln!("rea plist: not a property list");
+        return ExitCode::FAILURE;
+    };
+    report_plist(&plist)
+}
+
+/// Reads and parses a property list.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The decoded list, or `None`.
+fn load_plist(path: &Path) -> Option<rea_engine::plist::Plist> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::plist::parse_plist(&bytes)
+}
+
+/// Prints a property list and bundle summary.
+///
+/// # Arguments
+///
+/// * `plist` - Decoded list.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_plist(plist: &rea_engine::plist::Plist) -> ExitCode {
+    print!("{}", rea_engine::plist::format_plist_summary(plist));
+    let bundle = rea_engine::plist::analyze_bundle(plist);
+    print!("{}", rea_engine::plist::format_bundle_summary(&bundle));
+    ExitCode::SUCCESS
+}
+
+/// Reports a source map or a `sourceMappingURL` directive.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn sourcemap_cmd(path: &Path) -> ExitCode {
+    let Ok(bytes) = fs::read(path) else {
+        eprintln!("rea sourcemap: failed to read target");
+        return ExitCode::FAILURE;
+    };
+    if let Some(map) = rea_engine::sourcemap::parse_sourcemap(&bytes) {
+        return report_sourcemap(&map);
+    }
+    report_source_map_url(&bytes)
+}
+
+/// Prints a source map summary and its sources.
+///
+/// # Arguments
+///
+/// * `map` - Recovered source map.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_sourcemap(map: &rea_engine::sourcemap::SourceMap) -> ExitCode {
+    print!("{}", rea_engine::sourcemap::format_sourcemap_summary(map));
+    for source in &map.sources {
+        println!("source {source}");
+    }
+    ExitCode::SUCCESS
+}
+
+/// Prints a `sourceMappingURL` directive found in JavaScript.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_source_map_url(bytes: &[u8]) -> ExitCode {
+    let Some(url) = rea_engine::sourcemap::find_source_map_url(bytes) else {
+        eprintln!("rea sourcemap: not a source map");
+        return ExitCode::FAILURE;
+    };
+    println!("sourceMappingURL: {url}");
+    ExitCode::SUCCESS
+}
+
+/// Reports a packet capture or HAR document.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn pcap_cmd(path: &Path) -> ExitCode {
+    let Ok(bytes) = fs::read(path) else {
+        eprintln!("rea pcap: failed to read target");
+        return ExitCode::FAILURE;
+    };
+    if let Some(pcap) = rea_engine::netcap::parse_pcap(&bytes) {
+        return report_pcap(&pcap);
+    }
+    report_har(&bytes)
+}
+
+/// Prints a capture summary, requests, and hosts.
+///
+/// # Arguments
+///
+/// * `pcap` - Recovered capture inventory.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_pcap(pcap: &rea_engine::netcap::Pcap) -> ExitCode {
+    print!("{}", rea_engine::netcap::format_pcap_summary(pcap));
+    for request in &pcap.http_requests {
+        println!("{request}");
+    }
+    for host in &pcap.hosts {
+        println!("host {host}");
+    }
+    ExitCode::SUCCESS
+}
+
+/// Parses and prints a HAR document.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_har(bytes: &[u8]) -> ExitCode {
+    let Some(har) = rea_engine::netcap::parse_har(bytes) else {
+        eprintln!("rea pcap: not a packet capture or HAR");
+        return ExitCode::FAILURE;
+    };
+    print!("{}", rea_engine::netcap::format_har_summary(&har));
+    ExitCode::SUCCESS
+}
+
+/// Reports Flutter native libraries and assets.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn flutter_cmd(path: &Path) -> ExitCode {
+    let Some(apk) = load_flutter(path) else {
+        eprintln!("rea flutter: not a zip archive");
+        return ExitCode::FAILURE;
+    };
+    report_flutter(&apk)
+}
+
+/// Reads and parses a Flutter APK or zip archive.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The recovered inventory, or `None`.
+fn load_flutter(path: &Path) -> Option<rea_engine::flutter::FlutterApk> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::flutter::parse_flutter(&bytes)
+}
+
+/// Prints a Flutter summary and asset inventory.
+///
+/// # Arguments
+///
+/// * `apk` - Recovered inventory.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_flutter(apk: &rea_engine::flutter::FlutterApk) -> ExitCode {
+    print!("{}", rea_engine::flutter::format_flutter_summary(apk));
+    for asset in &apk.assets {
+        println!("asset {asset}");
+    }
+    ExitCode::SUCCESS
+}
+
+/// Reports an MS-DOS MZ executable header and entry disassembly.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn dos_cmd(path: &Path) -> ExitCode {
+    let Some(header) = load_dos(path) else {
+        eprintln!("rea dos: not an MS-DOS executable");
+        return ExitCode::FAILURE;
+    };
+    report_dos(&header)
+}
+
+/// Reads and parses an MS-DOS MZ executable.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The recovered header, or `None`.
+fn load_dos(path: &Path) -> Option<rea_engine::dos::DosHeader> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::dos::parse_dos(&bytes)
+}
+
+/// Prints a DOS header summary and entry disassembly.
+///
+/// # Arguments
+///
+/// * `header` - Recovered header.
+///
+/// # Returns
+///
+/// Exit code.
+fn report_dos(header: &rea_engine::dos::DosHeader) -> ExitCode {
+    print!("{}", rea_engine::dos::format_dos_summary(header));
+    for line in &header.code {
+        println!("  {line}");
+    }
+    ExitCode::SUCCESS
+}
+
 /// Emulates a target from its entry or a given address.
 ///
 /// # Arguments

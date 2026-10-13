@@ -197,6 +197,8 @@ fn dispatch_subcommand(cmd: &str, rest: &[String]) -> ExitCode {
     dispatch_inspect(cmd, rest)
         .or_else(|| dispatch_inspect2(cmd, rest))
         .or_else(|| dispatch_inspect3(cmd, rest))
+        .or_else(|| dispatch_inspect4(cmd, rest))
+        .or_else(|| dispatch_inspect5(cmd, rest))
         .unwrap_or_else(|| dispatch_named(cmd, rest))
 }
 
@@ -234,6 +236,47 @@ fn dispatch_inspect3(cmd: &str, rest: &[String]) -> Option<ExitCode> {
         "rules" => Some(dispatch_rules(rest)),
         "audit" => Some(dispatch_audit(rest)),
         "crypto" => Some(dispatch_crypto(rest)),
+        _ => None,
+    }
+}
+
+/// Dispatches artifact subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Exit code if matched, otherwise `None`.
+fn dispatch_inspect4(cmd: &str, rest: &[String]) -> Option<ExitCode> {
+    match cmd {
+        "wasm" => Some(dispatch_wasm(rest)),
+        "sqlite" => Some(dispatch_sqlite(rest)),
+        "coredump" | "core" => Some(dispatch_core(rest)),
+        "evm" => Some(dispatch_evm(rest)),
+        "plist" | "bundle" => Some(dispatch_plist(rest)),
+        _ => None,
+    }
+}
+
+/// Dispatches network and script subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Exit code if matched, otherwise `None`.
+fn dispatch_inspect5(cmd: &str, rest: &[String]) -> Option<ExitCode> {
+    match cmd {
+        "sourcemap" => Some(dispatch_sourcemap(rest)),
+        "pcap" | "har" => Some(dispatch_pcap(rest)),
+        "flutter" => Some(dispatch_flutter(rest)),
+        "dos" => Some(dispatch_dos(rest)),
         _ => None,
     }
 }
@@ -421,6 +464,130 @@ fn dispatch_audit(rest: &[String]) -> ExitCode {
 fn dispatch_crypto(rest: &[String]) -> ExitCode {
     rest.first()
         .map_or_else(usage_error, |t| crate::inspect::crypto_cmd(Path::new(t)))
+}
+
+/// Dispatches wasm subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_wasm(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::wasm_cmd(Path::new(t)))
+}
+
+/// Dispatches sqlite subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_sqlite(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::sqlite_cmd(Path::new(t)))
+}
+
+/// Dispatches coredump subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_core(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::core_cmd(Path::new(t)))
+}
+
+/// Dispatches evm subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_evm(rest: &[String]) -> ExitCode {
+    rest.first().map_or_else(usage_error, |t| crate::inspect::evm_cmd(Path::new(t)))
+}
+
+/// Dispatches plist subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_plist(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::plist_cmd(Path::new(t)))
+}
+
+/// Dispatches sourcemap subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_sourcemap(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::sourcemap_cmd(Path::new(t)))
+}
+
+/// Dispatches pcap subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_pcap(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::pcap_cmd(Path::new(t)))
+}
+
+/// Dispatches flutter subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_flutter(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::flutter_cmd(Path::new(t)))
+}
+
+/// Dispatches dos subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_dos(rest: &[String]) -> ExitCode {
+    rest.first().map_or_else(usage_error, |t| crate::inspect::dos_cmd(Path::new(t)))
 }
 
 /// Dispatches analyze subcommand.

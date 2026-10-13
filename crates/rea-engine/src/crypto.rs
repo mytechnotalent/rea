@@ -79,7 +79,30 @@ const CONSTANTS: &[(&str, &str, &[u8])] = &[
         ],
     ),
     ("TEA/XTEA delta", "block-cipher", &[0xb9, 0x79, 0x37, 0x9e]),
+    (
+        "Blowfish P-array",
+        "block-cipher",
+        &[
+            0x24, 0x3f, 0x6a, 0x88, 0x85, 0xa3, 0x08, 0xd3, 0x13, 0x19, 0x8a, 0x2e, 0x03, 0x70,
+            0x73, 0x44, 0xa4, 0x09, 0x38, 0x22, 0x29, 0x9f, 0x31, 0xd0, 0x08, 0x2e, 0xfa, 0x98,
+            0xec, 0x4e, 0x6c, 0x89,
+        ],
+    ),
+    (
+        "DES S-box 1",
+        "block-cipher",
+        &[
+            0x0e, 0x04, 0x0d, 0x01, 0x02, 0x0f, 0x0b, 0x08, 0x03, 0x0a, 0x06, 0x0c, 0x05, 0x09,
+            0x00, 0x07,
+        ],
+    ),
+    (
+        "RC5/RC6 key schedule",
+        "block-cipher",
+        &[0xb7, 0xe1, 0x51, 0x63, 0x9e, 0x37, 0x79, 0xb9],
+    ),
     ("ChaCha sigma", "stream-cipher", b"expand 32-byte k"),
+    ("bcrypt salt prefix", "hash", b"$2a$"),
     (
         "base64 alphabet",
         "encoding",
@@ -178,5 +201,26 @@ mod tests {
     #[test]
     fn test_detect_clean() {
         assert!(detect(b"no crypto constants present here at all").is_empty());
+    }
+
+    /// Verifies that the Blowfish P-array is detected.
+    #[test]
+    fn test_detect_blowfish() {
+        let mut buffer = vec![0u8; 40];
+        buffer[4..36].copy_from_slice(&blowfish_bytes());
+        assert!(detect(&buffer).iter().any(|h| h.name == "Blowfish P-array"));
+    }
+
+    /// Returns the first four Blowfish P-array words.
+    ///
+    /// # Returns
+    ///
+    /// The leading P-array bytes.
+    fn blowfish_bytes() -> [u8; 32] {
+        [
+            0x24, 0x3f, 0x6a, 0x88, 0x85, 0xa3, 0x08, 0xd3, 0x13, 0x19, 0x8a, 0x2e, 0x03, 0x70,
+            0x73, 0x44, 0xa4, 0x09, 0x38, 0x22, 0x29, 0x9f, 0x31, 0xd0, 0x08, 0x2e, 0xfa, 0x98,
+            0xec, 0x4e, 0x6c, 0x89,
+        ]
     }
 }

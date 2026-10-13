@@ -103,6 +103,8 @@ pub struct WasmModule {
     pub functions: usize,
     /// Memory limit descriptions.
     pub memories: Vec<String>,
+    /// Encoded size of each function body.
+    pub code_sizes: Vec<usize>,
     /// Validation problems discovered while parsing.
     pub warnings: Vec<String>,
 }
@@ -350,8 +352,41 @@ fn dispatch_section(id: u8, body: &[u8], module: &mut WasmModule) {
         3 => module.functions = count_entries(body),
         5 => parse_memories(body, module),
         7 => parse_exports(body, module),
+        10 => parse_code(body, module),
         _ => {}
     }
+}
+
+/// Parses the code section function bodies.
+///
+/// # Arguments
+///
+/// * `body` - Code section body.
+/// * `module` - Output module inventory.
+fn parse_code(body: &[u8], module: &mut WasmModule) {
+    let mut pos = 0;
+    let count = read_uleb(body, &mut pos).and_then(to_usize).unwrap_or(0);
+    while module.code_sizes.len() < count && push_code(body, &mut pos, module) {}
+}
+
+/// Records one code-section function body size.
+///
+/// # Arguments
+///
+/// * `body` - Code section body.
+/// * `pos` - Cursor advanced past the body.
+/// * `module` - Output module inventory.
+///
+/// # Returns
+///
+/// `true` while the cursor remains within the section.
+fn push_code(body: &[u8], pos: &mut usize, module: &mut WasmModule) -> bool {
+    let Some(size) = read_uleb(body, pos).and_then(to_usize) else {
+        return false;
+    };
+    module.code_sizes.push(size);
+    *pos = pos.saturating_add(size);
+    *pos <= body.len()
 }
 
 /// Reads the leading vector count of a section body.
@@ -530,6 +565,7 @@ pub fn format_wasm_summary(m: &WasmModule) -> String {
 fn append_wasm_counts(out: &mut String, m: &WasmModule) {
     let _ = writeln!(out, "Imports: {}", m.imports.len());
     let _ = writeln!(out, "Exports: {}", m.exports.len());
+    let _ = writeln!(out, "Code bodies: {}", m.code_sizes.len());
 }
 
 #[cfg(test)]
@@ -608,5 +644,15 @@ mod tests {
         let module = WasmModule { version: 1, functions: 3, ..Default::default() };
         let text = format_wasm_summary(&module);
         assert!(text.contains("Functions: 3"));
+    }
+
+    /// Verifies code-section function body parsing.
+    #[test]
+    fn test_wasm_code_section() {
+        let body = [0x01, 0x04, 0xaa, 0xbb, 0xcc, 0xdd];
+        let mut tail = vec![0x0a, u8::try_from(body.len()).unwrap()];
+        tail.extend_from_slice(&body);
+        let module = parse_wasm(&module_with(&tail)).unwrap();
+        assert_eq!(module.code_sizes, vec![4]);
     }
 }

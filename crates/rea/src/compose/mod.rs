@@ -83,6 +83,9 @@ use rea_engine::Analysis;
 // Import dependencies from rea_report
 use rea_report::{Block, Document, Section, Table};
 
+/// Artifact format findings.
+mod artifacts;
+
 /// Report section builders, in reading order.
 const SECTIONS: [fn(&Analysis) -> Vec<Section>; 12] = [
     summary::sections,
@@ -371,6 +374,7 @@ pub fn build(analysis: &Analysis, bytes: &[u8], assessment: Option<&str>) -> Doc
     document.sections = SECTIONS.iter().flat_map(|b| b(analysis)).collect();
     document.sections.extend(rules::sections(analysis, bytes));
     document.sections.extend(crypto::sections(bytes));
+    document.sections.extend(artifacts::sections(analysis, bytes));
     with_assessment(document, assessment)
 }
 

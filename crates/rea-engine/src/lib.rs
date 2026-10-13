@@ -145,6 +145,21 @@ pub mod flutter;
 /// MS-DOS MZ executable analysis and 16-bit disassembly.
 pub mod dos;
 
+/// Java class file and JAR parsing.
+pub mod jvm;
+
+/// Android resource table (resources.arsc) parsing.
+pub mod arsc;
+
+/// DWARF debug information recovery.
+pub mod dwarf;
+
+/// YARA-subset signature matching.
+pub mod yara;
+
+/// Windows PDB (MSF) container parsing.
+pub mod pdb;
+
 /// Calendar formatting of timestamps.
 mod time;
 
@@ -179,6 +194,7 @@ pub mod crypto;
 pub mod decompiler;
 
 pub use analysis::{analyze, analyze_path, Analysis};
+pub use arsc::{format_arsc_summary, is_arsc, parse_arsc, ArscTable};
 pub use asar::{AsarIpcChannel, AsarSecret, AsarTriage, AsarWarning};
 pub use core::{format_core_summary, is_core, parse_core, CoreDump};
 pub use decompiler::decompile;
@@ -188,6 +204,7 @@ pub use dex::{format_apk_summary, parse_apk_metadata, parse_dex_header, ApkMetad
 pub use discover::Finding;
 pub use dos::{format_dos_summary, is_dos_exe, parse_dos, DosHeader};
 pub use dotnet::{format_dotnet_summary, parse_dotnet_metadata, DotNetAssemblyRef, DotNetMetadata};
+pub use dwarf::{format_dwarf_summary, parse_dwarf, DwarfInfo};
 pub use emulate::{Emulation, Stop};
 pub use error::EngineError;
 pub use evm::{decode_hex, format_evm_summary, is_hex_text, parse_evm, EvmBytecode};
@@ -196,13 +213,17 @@ pub use forensics::{
     all_exploit_chains, all_vulnerabilities, format_findings_json, ExploitChain, Vulnerability,
 };
 pub use go::{format_go_summary, parse_go_metadata, GoMetadata, GoModule};
+pub use jvm::{format_java_summary, is_class, parse_class, JavaClass};
 pub use netcap::{format_har_summary, format_pcap_summary, is_har, is_pcap, parse_har, parse_pcap};
+pub use pdb::{format_pdb_summary, is_pdb, parse_pdb, PdbInfo};
 pub use plist::{
     analyze_bundle, format_bundle_summary, format_plist_summary, is_plist, parse_plist,
 };
 pub use sourcemap::{
-    find_source_map_url, format_sourcemap_summary, is_source_map, parse_sourcemap,
+    decode_mappings, find_source_map_url, format_sourcemap_summary, is_source_map, parse_sourcemap,
+    SourceSegment,
 };
 pub use sqlite::{format_sqlite_summary, is_sqlite, parse_sqlite, SqliteDb};
 pub use squashfs::{FirmwareTriage, SecurityArtifact, SquashfsMeta};
 pub use wasm::{format_wasm_summary, is_wasm, parse_wasm, WasmModule};
+pub use yara::{scan as yara_scan, Match as YaraMatch};

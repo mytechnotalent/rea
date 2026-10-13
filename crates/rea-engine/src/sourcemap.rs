@@ -43,6 +43,8 @@ pub struct SourceMap {
     pub sources: Vec<String>,
     /// Original symbol names.
     pub names: Vec<String>,
+    /// Encoded `VLQ` mappings string.
+    pub mappings: String,
     /// Number of generated lines.
     pub generated_lines: usize,
     /// Number of mapping segments.
@@ -51,6 +53,88 @@ pub struct SourceMap {
     pub has_content: bool,
     /// Validation problems.
     pub warnings: Vec<String>,
+}
+
+/// A decoded mapping segment.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SourceSegment {
+    /// Zero-based generated line.
+    pub generated_line: usize,
+    /// Zero-based generated column.
+    pub generated_column: usize,
+    /// Resolved source path, when present.
+    pub source: Option<String>,
+    /// Zero-based original line.
+    pub original_line: usize,
+    /// Zero-based original column.
+    pub original_column: usize,
+    /// Resolved name, when present.
+    pub name: Option<String>,
+}
+
+/// Most decoded mapping segments retained.
+const MAX_SEGMENTS: usize = 8192;
+
+/// Base64 alphabet used by `VLQ` mappings.
+const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Cumulative `VLQ` decode state.
+#[derive(Debug, Clone, Copy, Default)]
+struct SegmentState {
+    /// Current generated column.
+    generated_column: i64,
+    /// Current source index.
+    source: i64,
+    /// Current original line.
+    original_line: i64,
+    /// Current original column.
+    original_column: i64,
+    /// Current name index.
+    name: i64,
+}
+
+/// Incremental base64-`VLQ` reader.
+#[derive(Default)]
+struct VlqReader {
+    /// Decoded values.
+    values: Vec<i64>,
+    /// Bit shift of the current value.
+    shift: u32,
+    /// Accumulator of the current value.
+    acc: i64,
+}
+
+impl VlqReader {
+    /// Feeds one character and returns a completed value.
+    ///
+    /// # Arguments
+    ///
+    /// * `c` - Base64 digit.
+    ///
+    /// # Returns
+    ///
+    /// The decoded value when the digit terminates one.
+    fn push(&mut self, c: u8) -> Option<i64> {
+        let digit = b64_value(c)?;
+        self.acc += (digit & 0x1f) << self.shift;
+        self.shift += 5;
+        if digit & 0x20 == 0 {
+            return Some(self.take());
+        }
+        None
+    }
+
+    /// Completes the current value and resets the reader.
+    ///
+    /// # Returns
+    ///
+    /// The signed value.
+    fn take(&mut self) -> i64 {
+        let value = unsign(self.acc);
+        self.acc = 0;
+        self.shift = 0;
+        value
+    }
 }
 
 /// Reports whether a buffer is a JSON source map.
@@ -102,6 +186,7 @@ fn build_sourcemap(value: &Value) -> SourceMap {
     map.file = string_of(value, "file");
     map.sources = string_list(value, "sources");
     map.names = string_list(value, "names");
+    map.mappings = mappings.to_string();
     map
 }
 
@@ -252,6 +337,240 @@ fn append_sourcemap_counts(out: &mut String, map: &SourceMap) {
     let _ = writeln!(out, "Embedded content: {}", map.has_content);
 }
 
+/// Decodes a base64 `VLQ` segment into its field values.
+///
+/// # Arguments
+///
+/// * `segment` - One comma-delimited segment.
+///
+/// # Returns
+///
+/// The decoded signed fields.
+fn decode_segment(segment: &str) -> Vec<i64> {
+    let mut reader = VlqReader::default();
+    for &c in segment.as_bytes() {
+        if let Some(value) = reader.push(c) {
+            reader.values.push(value);
+        }
+    }
+    reader.values
+}
+
+/// Resolves a base64 digit to its six-bit value.
+///
+/// # Arguments
+///
+/// * `c` - ASCII character.
+///
+/// # Returns
+///
+/// The value, or `None`.
+fn b64_value(c: u8) -> Option<i64> {
+    let position = BASE64.iter().position(|&b| b == c)?;
+    i64::try_from(position).ok()
+}
+
+/// Converts a `VLQ` sign bit into a signed value.
+///
+/// # Arguments
+///
+/// * `value` - Unsigned accumulator.
+///
+/// # Returns
+///
+/// The signed value.
+fn unsign(value: i64) -> i64 {
+    let magnitude = value >> 1;
+    if value & 1 == 1 {
+        -magnitude
+    } else {
+        magnitude
+    }
+}
+
+/// Converts a decoded index into a host index.
+///
+/// # Arguments
+///
+/// * `value` - Signed value.
+///
+/// # Returns
+///
+/// The value as `usize`, or zero.
+fn to_usize(value: i64) -> usize {
+    usize::try_from(value).unwrap_or(0)
+}
+
+/// Resolves a source path by index.
+///
+/// # Arguments
+///
+/// * `map` - Recovered source map.
+/// * `index` - Source index.
+///
+/// # Returns
+///
+/// The path, or `None`.
+fn source_at(map: &SourceMap, index: i64) -> Option<String> {
+    let at = usize::try_from(index).ok()?;
+    map.sources.get(at).cloned()
+}
+
+/// Resolves a symbol name by index.
+///
+/// # Arguments
+///
+/// * `map` - Recovered source map.
+/// * `index` - Name index.
+///
+/// # Returns
+///
+/// The name, or `None`.
+fn name_at(map: &SourceMap, index: i64) -> Option<String> {
+    let at = usize::try_from(index).ok()?;
+    map.names.get(at).cloned()
+}
+
+/// Streaming decoder for `VLQ` mappings.
+struct Decoder<'a> {
+    /// Cumulative decode state.
+    state: SegmentState,
+    /// Source map providing the tables.
+    map: &'a SourceMap,
+    /// Accumulated segments.
+    out: Vec<SourceSegment>,
+}
+
+impl Decoder<'_> {
+    /// Decodes every line of the mappings string.
+    fn run(&mut self) {
+        for (line, group) in self.map.mappings.split(';').enumerate() {
+            self.state.generated_column = 0;
+            self.line(group, line);
+        }
+    }
+
+    /// Decodes one generated line.
+    ///
+    /// # Arguments
+    ///
+    /// * `group` - Semicolon-delimited line group.
+    /// * `line` - Zero-based generated line.
+    fn line(&mut self, group: &str, line: usize) {
+        for segment in group.split(',') {
+            if self.out.len() >= MAX_SEGMENTS {
+                return;
+            }
+            if let Some(seg) = self.segment(segment, line) {
+                self.out.push(seg);
+            }
+        }
+    }
+
+    /// Decodes one segment.
+    ///
+    /// # Arguments
+    ///
+    /// * `segment` - Comma-delimited segment.
+    /// * `line` - Zero-based generated line.
+    ///
+    /// # Returns
+    ///
+    /// The decoded segment, or `None`.
+    fn segment(&mut self, segment: &str, line: usize) -> Option<SourceSegment> {
+        if segment.is_empty() {
+            return None;
+        }
+        let fields = decode_segment(segment);
+        Some(self.apply(&fields, line))
+    }
+
+    /// Applies a segment's field deltas.
+    ///
+    /// # Arguments
+    ///
+    /// * `fields` - Decoded fields.
+    /// * `line` - Zero-based generated line.
+    ///
+    /// # Returns
+    ///
+    /// The decoded segment.
+    fn apply(&mut self, fields: &[i64], line: usize) -> SourceSegment {
+        self.state.generated_column += fields[0];
+        if fields.len() >= 4 {
+            self.original(fields);
+        }
+        if fields.len() >= 5 {
+            self.state.name += fields[4];
+        }
+        self.finish(fields.len(), line)
+    }
+
+    /// Applies the original-position deltas.
+    ///
+    /// # Arguments
+    ///
+    /// * `fields` - Decoded fields.
+    fn original(&mut self, fields: &[i64]) {
+        self.state.source += fields[1];
+        self.state.original_line += fields[2];
+        self.state.original_column += fields[3];
+    }
+
+    /// Builds a segment from the current state.
+    ///
+    /// # Arguments
+    ///
+    /// * `field_count` - Number of decoded fields.
+    /// * `line` - Zero-based generated line.
+    ///
+    /// # Returns
+    ///
+    /// The decoded segment.
+    fn finish(&self, field_count: usize, line: usize) -> SourceSegment {
+        SourceSegment {
+            generated_line: line,
+            generated_column: to_usize(self.state.generated_column),
+            source: source_at(self.map, self.state.source),
+            original_line: to_usize(self.state.original_line),
+            original_column: to_usize(self.state.original_column),
+            name: self.name(field_count),
+        }
+    }
+
+    /// Resolves the optional name for a segment.
+    ///
+    /// # Arguments
+    ///
+    /// * `field_count` - Number of decoded fields.
+    ///
+    /// # Returns
+    ///
+    /// The name, or `None`.
+    fn name(&self, field_count: usize) -> Option<String> {
+        if field_count >= 5 {
+            return name_at(self.map, self.state.name);
+        }
+        None
+    }
+}
+
+/// Decodes a source map's `VLQ` mappings into positioned segments.
+///
+/// # Arguments
+///
+/// * `map` - Recovered source map.
+///
+/// # Returns
+///
+/// The decoded segments, capped at [`MAX_SEGMENTS`].
+#[must_use]
+pub fn decode_mappings(map: &SourceMap) -> Vec<SourceSegment> {
+    let mut decoder = Decoder { state: SegmentState::default(), map, out: Vec::new() };
+    decoder.run();
+    decoder.out
+}
+
 #[cfg(test)]
 mod tests {
     // Import all parent module items
@@ -302,5 +621,16 @@ mod tests {
     fn test_sourcemap_summary() {
         let map = parse_sourcemap(&sample_map()).unwrap();
         assert!(format_sourcemap_summary(&map).contains("app.js"));
+    }
+
+    /// Verifies `VLQ` mapping decoding.
+    #[test]
+    fn test_sourcemap_decode() {
+        let json = r#"{"version":3,"sources":["a.ts"],"names":[],"mappings":"AAAA"}"#;
+        let map = parse_sourcemap(json.as_bytes()).unwrap();
+        let segments = decode_mappings(&map);
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].source, Some("a.ts".to_string()));
+        assert_eq!(segments[0].generated_line, 0);
     }
 }

@@ -208,11 +208,10 @@ fn tool_catalog() -> Value {
 /// JSON array of format tool declarations.
 fn format_tools() -> Value {
     json!([
-        {"name": "inspect_wasm", "description": "Parses a WebAssembly module: sections, imports, and exports.", "inputSchema": {"type": "object"}}, {"name": "inspect_sqlite", "description": "Reads SQLite schema and sampled rows.", "inputSchema": {"type": "object"}},
-        {"name": "inspect_coredump", "description": "Parses an ELF core dump: signal, registers, and mappings.", "inputSchema": {"type": "object"}}, {"name": "inspect_evm", "description": "Disassembles EVM bytecode and recovers selectors.", "inputSchema": {"type": "object"}},
-        {"name": "inspect_plist", "description": "Parses an Apple property list and bundle metadata.", "inputSchema": {"type": "object"}}, {"name": "inspect_sourcemap", "description": "Parses a JavaScript source map and lists sources.", "inputSchema": {"type": "object"}},
-        {"name": "inspect_capture", "description": "Parses a pcap or HAR capture.", "inputSchema": {"type": "object"}}, {"name": "inspect_flutter", "description": "Inspects a Flutter APK per-ABI libraries and assets.", "inputSchema": {"type": "object"}},
-        {"name": "inspect_dos", "description": "Parses an MS-DOS MZ executable and disassembles its entry.", "inputSchema": {"type": "object"}}
+        {"name": "inspect_wasm", "description": "Parses a WebAssembly module.", "inputSchema": {"type": "object"}}, {"name": "inspect_sqlite", "description": "Reads SQLite schema and rows.", "inputSchema": {"type": "object"}}, {"name": "inspect_coredump", "description": "Parses an ELF core dump.", "inputSchema": {"type": "object"}}, {"name": "inspect_evm", "description": "Disassembles EVM bytecode.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_plist", "description": "Parses an Apple property list.", "inputSchema": {"type": "object"}}, {"name": "inspect_sourcemap", "description": "Parses a JavaScript source map.", "inputSchema": {"type": "object"}}, {"name": "inspect_capture", "description": "Parses a pcap or HAR capture.", "inputSchema": {"type": "object"}}, {"name": "inspect_flutter", "description": "Inspects a Flutter APK.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_dos", "description": "Parses an MS-DOS MZ executable.", "inputSchema": {"type": "object"}}, {"name": "inspect_dwarf", "description": "Recovers DWARF units and functions.", "inputSchema": {"type": "object"}}, {"name": "inspect_java", "description": "Parses a Java class file.", "inputSchema": {"type": "object"}}, {"name": "inspect_arsc", "description": "Parses an Android resource table.", "inputSchema": {"type": "object"}},
+        {"name": "inspect_pdb", "description": "Parses Windows PDB GUID and age.", "inputSchema": {"type": "object"}}
     ])
 }
 
@@ -900,7 +899,7 @@ const NOT_OPEN: &str = "No target opened.";
 type FormatHandler = fn(&ServerSession) -> String;
 
 /// Format tool names and their handlers.
-const FORMAT_HANDLERS: [(&str, FormatHandler); 9] = [
+const FORMAT_HANDLERS: [(&str, FormatHandler); 13] = [
     ("inspect_wasm", call_wasm),
     ("inspect_sqlite", call_sqlite),
     ("inspect_coredump", call_core),
@@ -910,6 +909,10 @@ const FORMAT_HANDLERS: [(&str, FormatHandler); 9] = [
     ("inspect_capture", call_capture),
     ("inspect_flutter", call_flutter),
     ("inspect_dos", call_dos),
+    ("inspect_dwarf", call_dwarf),
+    ("inspect_java", call_java),
+    ("inspect_arsc", call_arsc),
+    ("inspect_pdb", call_pdb),
 ];
 
 /// Tool handler for `inspect_wasm`.
@@ -1125,6 +1128,82 @@ fn call_dos(s: &ServerSession) -> String {
     )
 }
 
+/// Tool handler for `inspect_dwarf`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted DWARF summary.
+fn call_dwarf(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::dwarf::parse_dwarf(bytes).map_or_else(
+        || "No DWARF debug information.".to_string(),
+        |d| rea_engine::dwarf::format_dwarf_summary(&d),
+    )
+}
+
+/// Tool handler for `inspect_java`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted Java class summary.
+fn call_java(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::jvm::parse_class(bytes).map_or_else(
+        || "Not a Java class file.".to_string(),
+        |c| rea_engine::jvm::format_java_summary(&c),
+    )
+}
+
+/// Tool handler for `inspect_arsc`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted Android resource summary.
+fn call_arsc(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::arsc::parse_arsc(bytes).map_or_else(
+        || "Not an Android resource table.".to_string(),
+        |t| rea_engine::arsc::format_arsc_summary(&t),
+    )
+}
+
+/// Tool handler for `inspect_pdb`.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// Formatted PDB summary.
+fn call_pdb(s: &ServerSession) -> String {
+    let Some(bytes) = &s.bytes else {
+        return NOT_OPEN.to_string();
+    };
+    rea_engine::pdb::parse_pdb(bytes).map_or_else(
+        || "Not a PDB file.".to_string(),
+        |p| rea_engine::pdb::format_pdb_summary(&p),
+    )
+}
+
 /// Handles one incoming JSON-RPC line from client.
 ///
 /// # Arguments
@@ -1311,7 +1390,7 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 27);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 31);
     }
 
     /// Verifies runtime tool handlers reject empty sessions.

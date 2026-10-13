@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.0.0
+# Reverse Engineering Assistant (REA) v5.1.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,22 +18,22 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.0.0
+# New in v5.1.0
 
-REA v5.0.0 adds ten new artifact and format analyzers on top of the pure-Rust engine, and exposes every one as an MCP tool:
+REA v5.1.0 deepens the engine with native debug-symbol recovery, a signature-matching engine, JVM/mobile resource parsing, and richer artifact reporting:
 
-- **WebAssembly.** Section parsing, import/export signatures, and function counts for `.wasm` modules.
-- **SQLite.** Header, schema (tables, columns, indexes, views, triggers), and sampled rows from `.db`/`.sqlite` files.
-- **Core Dumps & Crashes.** ELF core parsing with the terminating signal, captured registers, loadable mappings, and mapped files.
-- **EVM Bytecode.** Dispatch selector recovery, jump targets, notable opcodes, and inferred mutability.
-- **Apple Property Lists & Bundles.** Binary and XML plist decoding plus bundle metadata (identifier, version, executable, minimum OS).
-- **Flutter & APK.** Zip central-directory parsing, per-ABI native library digests, and Flutter asset inventory.
-- **Network Captures.** PCAP packet iteration with HTTP request/host extraction, plus HAR request/response summaries.
-- **JavaScript Source Maps.** Source resolution, mapping statistics, and `sourceMappingURL` discovery.
-- **MS-DOS (MZ).** Header fields, relocation table, and 16-bit entry-point disassembly.
-- **One-Command Setup.** `rea mcp --setup` now installs a matching agent skill, registers MCP servers, and backs up any file it replaces.
+- **DWARF Debug Info.** Recovers compile units, compilation directories, and function symbols (name and low PC) from ELF `.debug_info`/`.debug_abbrev`/`.debug_str` (versions 2-4).
+- **Windows PDB.** Parses MSF containers and recovers the PDB info-stream version, age, and GUID.
+- **YARA-Subset Matching.** `rea yara <target> <rules>` matches rules with literal, case-insensitive, wide, and hex-with-wildcard patterns, with `and`/`or`/`not`, `any`/`all`/`N of them`, `#count`, and `filesize` conditions.
+- **Java Class Files.** Parses the constant pool, versions, `this`/`super` class, interfaces, methods, and fields.
+- **Android `resources.arsc`.** Recovers packages, the global string pool, and configuration locales.
+- **Crypto Expansion.** Adds Blowfish P-array, DES S-box, RC5/RC6 key-schedule, and bcrypt signatures.
+- **Source-Map VLQ Decoding.** Decodes mappings into positioned generated-to-original segments.
+- **WASM Code Bodies.** Reports per-function code-section sizes.
+- **Artifact Report Sections.** The one-shot now emits a section for every artifact format it detects.
+- **31-tool MCP Server.** Adds `inspect_dwarf`, `inspect_java`, `inspect_arsc`, and `inspect_pdb`.
 
-Retained from v4.0.0: the pure-Rust decompiler (structured control flow, constant folding, cross-block copy propagation, dead-store elimination), cross-architecture disassembly and emulation, emulation-driven unpacking, capa-class rules with MITRE ATT&CK/MBC, vulnerability audit with SARIF, cipher and crypto-constant recovery, Go/.NET/Android forensics, the 27-tool MCP server, and machine-readable JSON output.
+Retained from v5.0.0: WebAssembly, SQLite, core-dump, EVM, property-list, Flutter, PCAP/HAR, source-map, and MS-DOS analyzers; the pure-Rust decompiler; cross-architecture disassembly and emulation; emulation-driven unpacking; capa-class rules with MITRE ATT&CK/MBC; vulnerability audit with SARIF; and cipher and crypto-constant recovery.
 
 <br>
 
@@ -79,6 +79,11 @@ Retained from v4.0.0: the pure-Rust decompiler (structured control flow, constan
 | PCAP and HAR captures | Full | Packets, HTTP requests, hosts, HAR entries |
 | JavaScript source maps | Full | Sources, mapping statistics, `sourceMappingURL` |
 | MS-DOS `MZ` executables | Full | Header, relocations, 16-bit entry disassembly |
+| Java class files (`.class`) | Full | Constant pool, this/super, methods, fields |
+| Android `resources.arsc` | Full | Packages, string pool, configuration locales |
+| DWARF debug info (ELF) | Full | Compile units, directories, function symbols |
+| Windows PDB (`.pdb`) | Full | MSF container, info-stream version, age, GUID |
+| YARA-subset rules | Matching | Literal/wide/nocase/hex patterns with boolean conditions |
 | Any raw or unknown file | Identity, hashes, entropy | String extraction, indicators, entropy mapping |
 
 Non-x86 disassembly and emulation are powered by embedded SLEIGH processor specifications compiled directly by a pure-Rust engine. No Ghidra, Java, Python, or external command-line tools are required.
@@ -135,6 +140,11 @@ rea sourcemap <app.js.map>              # source map sources and statistics
 rea pcap <capture.pcap>                 # packets, HTTP requests, hosts
 rea flutter <app.apk>                   # per-ABI native libraries and assets
 rea dos <program.exe>                   # MZ header and 16-bit entry code
+rea java <App.class>                    # Java class pool, methods, fields
+rea arsc <resources.arsc>               # Android packages, strings, locales
+rea dwarf <app.elf>                     # DWARF compile units and functions
+rea pdb <app.pdb>                       # Windows PDB version, age, GUID
+rea yara <target> <rules.yar>           # YARA-subset signature matching
 rea analyze <target>                    # alias for the one-shot
 ```
 
@@ -214,7 +224,7 @@ claude mcp add rea "$PWD/rea" serve
 claude mcp add rea "$PWD/rea" serve
 ```
 
-The server exposes 27 tools: `open_binary`, `binary_session`, `list_functions`, `decompile_function`, `find_xrefs`, `search_strings`, `analyze_firmware`, `analyze_javascript`, `generate_dossier`, `inspect_go`, `inspect_dotnet`, `inspect_android`, `run_rules`, `audit`, `inspect_crypto`, `decrypt_strings`, `emulate`, `unpack`, `inspect_wasm`, `inspect_sqlite`, `inspect_coredump`, `inspect_evm`, `inspect_plist`, `inspect_sourcemap`, `inspect_capture`, `inspect_flutter`, `inspect_dos`.
+The server exposes 31 tools: `open_binary`, `binary_session`, `list_functions`, `decompile_function`, `find_xrefs`, `search_strings`, `analyze_firmware`, `analyze_javascript`, `generate_dossier`, `inspect_go`, `inspect_dotnet`, `inspect_android`, `run_rules`, `audit`, `inspect_crypto`, `decrypt_strings`, `emulate`, `unpack`, `inspect_wasm`, `inspect_sqlite`, `inspect_coredump`, `inspect_evm`, `inspect_plist`, `inspect_sourcemap`, `inspect_capture`, `inspect_flutter`, `inspect_dos`, `inspect_dwarf`, `inspect_java`, `inspect_arsc`, `inspect_pdb`.
 
 <br>
 

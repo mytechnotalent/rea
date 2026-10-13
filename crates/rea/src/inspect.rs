@@ -943,6 +943,210 @@ fn report_dos(header: &rea_engine::dos::DosHeader) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Reports a Java class file.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn java_cmd(path: &Path) -> ExitCode {
+    let Some(class) = load_java(path) else {
+        eprintln!("rea java: not a Java class file");
+        return ExitCode::FAILURE;
+    };
+    print!("{}", rea_engine::jvm::format_java_summary(&class));
+    print_java_members(&class);
+    ExitCode::SUCCESS
+}
+
+/// Reads and parses a Java class file.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The recovered class, or `None`.
+fn load_java(path: &Path) -> Option<rea_engine::jvm::JavaClass> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::jvm::parse_class(&bytes)
+}
+
+/// Prints Java fields and methods.
+///
+/// # Arguments
+///
+/// * `class` - Recovered class.
+fn print_java_members(class: &rea_engine::jvm::JavaClass) {
+    for field in &class.fields {
+        println!("field {} {}", field.name, field.descriptor);
+    }
+    for method in &class.methods {
+        println!("method {} {}", method.name, method.descriptor);
+    }
+}
+
+/// Reports an Android resource table.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn arsc_cmd(path: &Path) -> ExitCode {
+    let Some(table) = load_arsc(path) else {
+        eprintln!("rea arsc: not an Android resource table");
+        return ExitCode::FAILURE;
+    };
+    print!("{}", rea_engine::arsc::format_arsc_summary(&table));
+    print_arsc_strings(&table);
+    ExitCode::SUCCESS
+}
+
+/// Prints Android resource table strings.
+///
+/// # Arguments
+///
+/// * `table` - Recovered table.
+fn print_arsc_strings(table: &rea_engine::arsc::ArscTable) {
+    for value in table.strings.iter().take(40) {
+        println!("{value}");
+    }
+}
+
+/// Reads and parses an Android resource table.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The recovered table, or `None`.
+fn load_arsc(path: &Path) -> Option<rea_engine::arsc::ArscTable> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::arsc::parse_arsc(&bytes)
+}
+
+/// Reports DWARF compile units and functions.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn dwarf_cmd(path: &Path) -> ExitCode {
+    let Some(dwarf) = load_dwarf(path) else {
+        eprintln!("rea dwarf: no DWARF debug information");
+        return ExitCode::FAILURE;
+    };
+    print!("{}", rea_engine::dwarf::format_dwarf_summary(&dwarf));
+    print_dwarf_functions(&dwarf);
+    ExitCode::SUCCESS
+}
+
+/// Reads and parses DWARF debug information.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The recovered inventory, or `None`.
+fn load_dwarf(path: &Path) -> Option<rea_engine::dwarf::DwarfInfo> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::dwarf::parse_dwarf(&bytes)
+}
+
+/// Prints DWARF function symbols.
+///
+/// # Arguments
+///
+/// * `dwarf` - Recovered inventory.
+fn print_dwarf_functions(dwarf: &rea_engine::dwarf::DwarfInfo) {
+    for function in dwarf.functions.iter().take(60) {
+        println!("0x{:x} {}", function.low_pc, function.name);
+    }
+}
+
+/// Scans a target with a YARA-subset rule file.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+/// * `rules` - Rule file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn yara_cmd(path: &Path, rules: &Path) -> ExitCode {
+    let (Ok(bytes), Ok(rules_text)) = (fs::read(path), fs::read_to_string(rules)) else {
+        eprintln!("rea yara: failed to read target or rules");
+        return ExitCode::FAILURE;
+    };
+    let matches = rea_engine::yara::scan(&bytes, &rules_text);
+    println!("matched {} rule(s)", matches.len());
+    print_yara_matches(&matches);
+    ExitCode::SUCCESS
+}
+
+/// Prints matched YARA-subset rules.
+///
+/// # Arguments
+///
+/// * `matches` - Matched rules.
+fn print_yara_matches(matches: &[rea_engine::yara::Match]) {
+    for hit in matches {
+        println!("{} {}", hit.name, hit.tags.join(","));
+    }
+}
+
+/// Reports PDB container metadata.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn pdb_cmd(path: &Path) -> ExitCode {
+    let Some(pdb) = load_pdb(path) else {
+        eprintln!("rea pdb: not a PDB file");
+        return ExitCode::FAILURE;
+    };
+    print!("{}", rea_engine::pdb::format_pdb_summary(&pdb));
+    ExitCode::SUCCESS
+}
+
+/// Reads and parses a PDB container.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The recovered metadata, or `None`.
+fn load_pdb(path: &Path) -> Option<rea_engine::pdb::PdbInfo> {
+    let bytes = fs::read(path).ok()?;
+    rea_engine::pdb::parse_pdb(&bytes)
+}
+
 /// Emulates a target from its entry or a given address.
 ///
 /// # Arguments

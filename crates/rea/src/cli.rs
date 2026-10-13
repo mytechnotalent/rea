@@ -199,6 +199,7 @@ fn dispatch_subcommand(cmd: &str, rest: &[String]) -> ExitCode {
         .or_else(|| dispatch_inspect3(cmd, rest))
         .or_else(|| dispatch_inspect4(cmd, rest))
         .or_else(|| dispatch_inspect5(cmd, rest))
+        .or_else(|| dispatch_inspect6(cmd, rest))
         .unwrap_or_else(|| dispatch_named(cmd, rest))
 }
 
@@ -277,6 +278,27 @@ fn dispatch_inspect5(cmd: &str, rest: &[String]) -> Option<ExitCode> {
         "pcap" | "har" => Some(dispatch_pcap(rest)),
         "flutter" => Some(dispatch_flutter(rest)),
         "dos" => Some(dispatch_dos(rest)),
+        "java" | "jar" | "class" => Some(dispatch_java(rest)),
+        _ => None,
+    }
+}
+
+/// Dispatches mobile resource subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Exit code if matched, otherwise `None`.
+fn dispatch_inspect6(cmd: &str, rest: &[String]) -> Option<ExitCode> {
+    match cmd {
+        "arsc" => Some(dispatch_arsc(rest)),
+        "dwarf" => Some(dispatch_dwarf(rest)),
+        "yara" => Some(dispatch_yara(rest)),
+        "pdb" => Some(dispatch_pdb(rest)),
         _ => None,
     }
 }
@@ -588,6 +610,77 @@ fn dispatch_flutter(rest: &[String]) -> ExitCode {
 /// Process exit code.
 fn dispatch_dos(rest: &[String]) -> ExitCode {
     rest.first().map_or_else(usage_error, |t| crate::inspect::dos_cmd(Path::new(t)))
+}
+
+/// Dispatches java subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_java(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::java_cmd(Path::new(t)))
+}
+
+/// Dispatches arsc subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_arsc(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::arsc_cmd(Path::new(t)))
+}
+
+/// Dispatches dwarf subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_dwarf(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::dwarf_cmd(Path::new(t)))
+}
+
+/// Dispatches yara subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_yara(rest: &[String]) -> ExitCode {
+    match rest {
+        [target, rules] => crate::inspect::yara_cmd(Path::new(target), Path::new(rules)),
+        _ => usage_error(),
+    }
+}
+
+/// Dispatches pdb subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_pdb(rest: &[String]) -> ExitCode {
+    rest.first().map_or_else(usage_error, |t| crate::inspect::pdb_cmd(Path::new(t)))
 }
 
 /// Dispatches analyze subcommand.

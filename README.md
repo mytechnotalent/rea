@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.6.0
+# Reverse Engineering Assistant (REA) v5.6.1
 
 Autonomous Reverse Engineering Framework
 
@@ -18,15 +18,13 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.6.0
+# New in v5.6.1
 
-REA v5.6.0 adds differential analysis and makes coverage explicit:
+REA v5.6.1 fixes report formatting and accuracy:
 
-- **Differential comparison.** `rea diff <a> <b>` (and the MCP `compare_binaries` tool) compares two targets and reports added/removed imports, strings, capabilities, rules, and crypto constants, plus size, entropy, and function/instruction deltas. It writes `re-<a>-vs-<b>.md`.
-- **Coverage & Limitations.** Every report now states what was analyzed (functions, instructions, strings) and what was not (truncated disassembly, encrypted or compressed regions, missing headers), so conclusions are scoped to real coverage.
-- **Coverage in JSON.** The machine-readable report adds a `coverage` object: functions, instructions, strings, `truncated`, and `opaque_bytes`.
-- **Provenance marking (MCP).** Tool results that can carry target-derived text are marked `_meta.provenance.untrusted_content`; agents are told to treat that content as data, never as instructions.
-- **34 MCP tools.**
+- **One instruction per line.** Fenced code blocks in the analyst narrative are now preserved with one instruction per line. Previously the composer flattened any multi-line listing onto a single line; it now parses fenced blocks and never space-joins code. The analyst prompt requires one instruction per line as well.
+- **Consistent listing format.** Deterministic function listings now use `0x`-prefixed addresses and hex operands throughout (ARM and x86), for example `0x10001206  ldr r5,[0x10001250]`.
+- **No over-claiming.** A lone backward branch is now described as a "backward-branching loop" instead of "Main application loop"; the main-loop wording is reserved for loops that print application format strings.
 
 # Features
 
@@ -113,7 +111,7 @@ REA writes three files beside the target:
 Focused subcommands are also available:
 
 ```bash
-rea decompile <target> [symbol|0xaddr]   # recovered pseudo-C
+rea decompile <target> [symbol|0xaddr]  # recovered pseudo-C
 rea strings <target>                    # extracted strings
 rea decrypt <target>                    # strings hidden by single-byte ciphers
 rea crypto <target>                     # cryptographic constants

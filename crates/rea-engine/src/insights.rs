@@ -371,10 +371,10 @@ fn collect_reasons(func: &Function, entry: u64, annotator: &Annotator) -> Vec<St
 /// Weighted score, boosted for main loops.
 fn score_reasons(reasons: &[String]) -> u32 {
     let base = weight(reasons.len());
-    if reasons.iter().any(|r| r.starts_with("Main application loop (prints")) {
+    if reasons.iter().any(|r| r.starts_with("Contains a loop that prints")) {
         return base.saturating_add(100);
     }
-    if reasons.iter().any(|r| r.starts_with("Main application loop")) {
+    if reasons.iter().any(|r| r.starts_with("Contains a backward-branching loop")) {
         return base.saturating_add(50);
     }
     base
@@ -543,14 +543,14 @@ fn is_loop_candidate(function: &Function) -> bool {
 /// Fallback reason when no format string is identified in loop.
 fn fallback_loop_reasons(function: &Function) -> Vec<String> {
     (!function.calls.is_empty())
-        .then(|| "Main application loop (infinite self-branching execution)".into())
+        .then(|| "Contains a backward-branching loop".into())
         .into_iter()
         .collect()
 }
 
 /// Formats reason when format string was discovered in loop.
 fn format_loop_reason(fmt: &str) -> Vec<String> {
-    vec![format!("Main application loop (prints {})", quote(fmt))]
+    vec![format!("Contains a loop that prints {}", quote(fmt))]
 }
 
 /// Explains main loop self-branching behavior.

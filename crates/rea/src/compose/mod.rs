@@ -156,6 +156,8 @@ enum PendingBlock {
     Bullets(Vec<String>),
     /// Accumulating table rows.
     Table(Vec<String>),
+    /// Accumulating fenced code lines.
+    Code(Vec<String>),
 }
 
 /// Splits a markdown table row into trimmed cell values.
@@ -206,6 +208,7 @@ fn flush_block(pending: PendingBlock) -> Option<Block> {
         PendingBlock::Paragraph(t) => (!t.is_empty()).then_some(Block::Paragraph(t)),
         PendingBlock::Bullets(b) => (!b.is_empty()).then_some(Block::Bullets(b)),
         PendingBlock::Table(lines) => parse_table(&lines.join("\n")).map(Block::Table),
+        PendingBlock::Code(lines) => (!lines.is_empty()).then_some(Block::Code(lines.join("\n"))),
     }
 }
 
@@ -338,14 +341,89 @@ fn route_content(section: &mut Section, pending: &mut PendingBlock, line: &str) 
 /// * `pending` - Block accumulator.
 /// * `line` - Line of text.
 fn process_line(section: &mut Section, pending: &mut PendingBlock, line: &str) {
-    let t = line.trim();
-    if t.is_empty() || t == "---" {
+    if line.trim().starts_with("```") {
+        toggle_code(section, pending);
+    } else if !append_code(pending, line) {
+        route_line(section, pending, line.trim(), line);
+    }
+}
+
+/// Toggles fenced code-block accumulation.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+fn toggle_code(section: &mut Section, pending: &mut PendingBlock) {
+    if matches!(pending, PendingBlock::Code(_)) {
         push_flush(section, pending);
-    } else if t.starts_with('#') {
+    } else {
+        push_flush(section, pending);
+        *pending = PendingBlock::Code(Vec::new());
+    }
+}
+
+/// Appends a line to an open code block.
+///
+/// # Arguments
+///
+/// * `pending` - Block accumulator.
+/// * `line` - Verbatim code line.
+///
+/// # Returns
+///
+/// `true` when the line was captured by an open code block.
+fn append_code(pending: &mut PendingBlock, line: &str) -> bool {
+    if let PendingBlock::Code(lines) = pending {
+        lines.push(line.to_string());
+        return true;
+    }
+    false
+}
+
+/// Routes a non-code line to a separator, heading, or content handler.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `t` - Trimmed line text.
+/// * `line` - Original line text.
+fn route_line(section: &mut Section, pending: &mut PendingBlock, t: &str, line: &str) {
+    if is_separator(t) {
+        push_flush(section, pending);
+    } else {
+        route_inline(section, pending, t, line);
+    }
+}
+
+/// Routes a content line to a heading or inline handler.
+///
+/// # Arguments
+///
+/// * `section` - Target section.
+/// * `pending` - Block accumulator.
+/// * `t` - Trimmed line text.
+/// * `line` - Original line text.
+fn route_inline(section: &mut Section, pending: &mut PendingBlock, t: &str, line: &str) {
+    if t.starts_with('#') {
         handle_heading(section, pending, t);
     } else {
         route_content(section, pending, line);
     }
+}
+
+/// Reports whether a line ends the current block.
+///
+/// # Arguments
+///
+/// * `t` - Trimmed line text.
+///
+/// # Returns
+///
+/// `true` for blank lines and horizontal rules.
+fn is_separator(t: &str) -> bool {
+    t.is_empty() || t == "---"
 }
 
 /// Parses the assessment markdown text into a report section.
@@ -500,5 +578,17 @@ mod tests {
         assert!(matches!(section.blocks[1], Block::Paragraph(_)));
         assert!(matches!(section.blocks[2], Block::Bullets(_)));
         assert!(matches!(section.blocks[3], Block::Table(_)));
+    }
+
+    /// Verifies that fenced code keeps one instruction per line.
+    #[test]
+    fn test_assessment_preserves_code_lines() {
+        let md = "## Listing\n\n```\n0x1  mov r0, r1\n0x2  bx lr\n```";
+        let section = assessment_section(md);
+        let code = section.blocks.iter().find_map(|b| match b {
+            Block::Code(text) => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(code.as_deref(), Some("0x1  mov r0, r1\n0x2  bx lr"));
     }
 }

@@ -79,7 +79,9 @@ with confidence.\n11. Assessment Confidence & Limitations: what is known, what i
 what could not be determined.\n\nRules: explain the assembler in human terms rather than \
 restating mnemonics; attach evidence and a confidence to every non-obvious claim; prefer concrete \
 statements over hedging; and when a fact is unknown or encrypted, say so plainly rather than \
-guessing.\n\nOutput ONLY the report itself, beginning with its title and section 1. Never include \
+guessing. Format every disassembly listing in a fenced code block with one instruction per line \
+and 0x-prefixed addresses; never place multiple instructions on one line.\n\nOutput ONLY the \
+report itself, beginning with its title and section 1. Never include \
 a preamble, process commentary, or notes about the tools you used or your investigation.";
 
 /// Instruction appended to the evidence dossier describing the model's role.

@@ -372,7 +372,8 @@ fn format_line(
     let mut aligned = decoded.targets.iter().map(|t| code_address(*t, interworking));
     let note = aligned.find_map(annotate);
     let comment = note.map(|n| format!("  ; {n}")).unwrap_or_default();
-    format!("{address:08x}  {}{comment}", decoded.text)
+    let text = crate::semantics::format_imm_hex(&decoded.text);
+    format!("0x{address:x}  {text}{comment}")
 }
 
 /// Masks a code address, clearing the ARM Thumb selector bit.

@@ -209,7 +209,7 @@ fn line(
     targets.push(instruction.near_branch_target());
     let note = targets.into_iter().filter(|t| *t != 0).find_map(annotate);
     let comment = note.map(|n| format!("  ; {n}")).unwrap_or_default();
-    format!("{:0width$x}  {text}{comment}", instruction.ip())
+    format!("0x{ip:0width$x}  {text}{comment}", ip = instruction.ip())
 }
 
 /// Tracks how far a linearly listed function extends.
@@ -327,7 +327,7 @@ mod tests {
     fn test_render_annotates_targets() {
         let note = |a: u64| (a == 0x1005).then(|| "helper".to_string());
         let lines = list(&[0xe8, 0x00, 0, 0, 0, 0xc3], &note);
-        assert!(lines[0].starts_with("00001000  call"));
+        assert!(lines[0].starts_with("0x00001000  call"));
         assert!(lines[0].ends_with("; helper"));
     }
 }

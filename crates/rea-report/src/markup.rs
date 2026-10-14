@@ -162,9 +162,29 @@ fn bullet(item: &str) -> String {
 fn table_markup(table: &Table) -> String {
     let header: Vec<String> = table.headers.iter().map(|h| cell(h)).collect();
     let body: Vec<String> = table.rows.iter().flatten().map(|c| cell(c)).collect();
-    let (columns, header) = (table.headers.len().max(1), header.join(", "));
+    let columns = column_spec(table.headers.len());
+    let header = header.join(", ");
     let body = body.join(", ");
     format!("#table(columns: {columns}, table.header({header}), {body})\n")
+}
+
+/// Builds a column specification that lets long cells wrap.
+///
+/// The first and last columns size to content; interior columns flex.
+///
+/// # Arguments
+///
+/// * `count` - Column count.
+///
+/// # Returns
+///
+/// The Typst columns argument.
+fn column_spec(count: usize) -> String {
+    match count {
+        0 | 1 => "auto".to_string(),
+        2 => "(auto, 1fr)".to_string(),
+        other => format!("(auto, {}auto)", "1fr, ".repeat(other - 2)),
+    }
 }
 
 /// Wraps text as one table cell.
@@ -177,7 +197,57 @@ fn table_markup(table: &Table) -> String {
 ///
 /// A Typst content block holding the text.
 fn cell(raw: &str) -> String {
-    format!("[{}]", rich(raw))
+    format!("[{}]", rich(&breakable(raw)))
+}
+
+/// Inserts zero-width break opportunities into long runs.
+///
+/// Long unbreakable tokens such as hashes and JSON would otherwise overflow
+/// their table cell and overlap the adjacent column.
+///
+/// # Arguments
+///
+/// * `text` - Cell text.
+///
+/// # Returns
+///
+/// The text with zero-width spaces injected every 16 characters per run.
+fn breakable(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + text.len() / 16 + 8);
+    let mut run = 0;
+    for c in text.chars() {
+        step_break(&mut out, &mut run, c);
+    }
+    out
+}
+
+/// Advances a run counter and injects a break at the interval.
+///
+/// # Arguments
+///
+/// * `out` - Destination buffer.
+/// * `run` - Current run length.
+/// * `c` - Current character.
+fn step_break(out: &mut String, run: &mut usize, c: char) {
+    if c.is_whitespace() {
+        *run = 0;
+    } else {
+        *run += 1;
+        insert_break(out, *run);
+    }
+    out.push(c);
+}
+
+/// Pushes a zero-width space at the break interval.
+///
+/// # Arguments
+///
+/// * `out` - Destination buffer.
+/// * `run` - Current run length.
+fn insert_break(out: &mut String, run: usize) {
+    if run.is_multiple_of(16) {
+        out.push('\u{200b}');
+    }
 }
 
 /// Finds the opening and closing tag offsets.
@@ -343,8 +413,16 @@ mod tests {
     #[test]
     fn test_table_markup_lists_cells() {
         let table = Table::new(&["A", "B"]).row(vec!["1".into(), "2".into()]);
-        let want = "#table(columns: 2, table.header([#text(\"A\")], [#text(\"B\")]), [#text(\"1\")], [#text(\"2\")])\n";
+        let want = "#table(columns: (auto, 1fr), table.header([#text(\"A\")], [#text(\"B\")]), [#text(\"1\")], [#text(\"2\")])\n";
         assert_eq!(table_markup(&table), want);
+    }
+
+    /// Verifies long cell tokens gain zero-width break opportunities.
+    #[test]
+    fn test_cell_breaks_long_tokens() {
+        let long = "a".repeat(40);
+        let rendered = cell(&long);
+        assert!(rendered.contains('\u{200b}'));
     }
 
     /// Verifies that the cover is emitted after the preamble.

@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.6.1
+# Reverse Engineering Assistant (REA) v5.6.2
 
 Autonomous Reverse Engineering Framework
 
@@ -18,13 +18,12 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.6.1
+# New in v5.6.2
 
-REA v5.6.1 fixes report formatting and accuracy:
+REA v5.6.2 fixes overlapping text in PDF report tables:
 
-- **One instruction per line.** Fenced code blocks in the analyst narrative are now preserved with one instruction per line. Previously the composer flattened any multi-line listing onto a single line; it now parses fenced blocks and never space-joins code. The analyst prompt requires one instruction per line as well.
-- **Consistent listing format.** Deterministic function listings now use `0x`-prefixed addresses and hex operands throughout (ARM and x86), for example `0x10001206  ldr r5,[0x10001250]`.
-- **No over-claiming.** A lone backward branch is now described as a "backward-branching loop" instead of "Main application loop"; the main-loop wording is reserved for loops that print application format strings.
+- **No overlapping cells.** Long unbreakable tokens such as SHA-256 hashes and JSON metadata now wrap inside their table cells instead of overflowing into the adjacent column and colliding with its text.
+- **Constrained columns.** Table columns are now width-constrained (the first and last size to content; interior columns flex), and long runs receive zero-width break opportunities so they wrap cleanly.
 
 # Features
 

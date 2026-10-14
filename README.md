@@ -4,9 +4,9 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.6.2
+# Reverse Engineering Assistant (REA) v5.6.3
 
-Autonomous Reverse Engineering Framework
+**The reverse-engineering framework you can run anywhere, with nothing installed, and actually trust.**
 
 ```bash
 rea suspect
@@ -14,16 +14,15 @@ rea suspect
 
 Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the target. That's the whole workflow.
 
-**Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and deterministic engine. Built in 100% pure Rust.
+**Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and a deterministic engine. Built in 100% pure Rust — run anywhere, install nothing, and every claim verified.
 
 <br>
 
-# New in v5.6.2
+# New in v5.6.3
 
-REA v5.6.2 fixes overlapping text in PDF report tables:
+REA v5.6.3 sharpens the project's positioning:
 
-- **No overlapping cells.** Long unbreakable tokens such as SHA-256 hashes and JSON metadata now wrap inside their table cells instead of overflowing into the adjacent column and colliding with its text.
-- **Constrained columns.** Table columns are now width-constrained (the first and last size to content; interior columns flex), and long runs receive zero-width break opportunities so they wrap cleanly.
+- **New tagline.** REA is "the reverse-engineering framework you can run anywhere, with nothing installed, and actually trust" — highlighting the pure-Rust, zero-dependency, verifiable core.
 
 # Features
 

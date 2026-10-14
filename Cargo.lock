@@ -1890,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "rea"
-version = "5.4.1"
+version = "5.5.0"
 dependencies = [
  "rea-engine",
  "rea-report",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "rea-engine"
-version = "5.4.1"
+version = "5.5.0"
 dependencies = [
  "goblin",
  "iced-x86",
@@ -1917,7 +1917,7 @@ dependencies = [
 
 [[package]]
 name = "rea-report"
-version = "5.4.1"
+version = "5.5.0"
 dependencies = [
  "typst",
  "typst-assets",
@@ -1927,7 +1927,7 @@ dependencies = [
 
 [[package]]
 name = "rea-sleigh"
-version = "5.4.1"
+version = "5.5.0"
 dependencies = [
  "include_dir",
  "wazabin-sleigh",
@@ -2000,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "reverse-engineering"
-version = "5.4.1"
+version = "5.5.0"
 dependencies = [
  "rea",
  "rea-engine",
@@ -3583,7 +3583,7 @@ checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
 
 [[package]]
 name = "xtask"
-version = "5.4.1"
+version = "5.5.0"
 dependencies = [
  "proc-macro2",
  "syn 2.0.119",

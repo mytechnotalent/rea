@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.4.1
+# Reverse Engineering Assistant (REA) v5.5.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,14 +18,14 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.4.1
+# New in v5.5.0
 
-REA v5.4.1 guarantees no unverified claim ships in a report or dossier:
+REA v5.5.0 lets the one-shot analyst run on OpenRouter (default) or OpenCode Go:
 
-- **No unverified claim ships.** The verifier now iterates: any cited address or string that is not found in the engine evidence is sent back to the analyst, which must prove it with the tools or remove it. After the proof rounds (`REA_VERIFY_ROUNDS`), any line still citing an unproven token is deterministically removed, so the shipped report contains only evidence-backed citations.
-- **Reliable failover.** The default analyst chain is exactly `deepseek/deepseek-v4.1-flash` and, if that model is unavailable, `openrouter/free`. A defunct free-model slug was removed so REA no longer wastes a call on it. Override the chain with `REA_FALLBACK_MODELS`.
-- **Case-insensitive verification.** Cited addresses and strings are matched case-insensitively, removing false "unverified" flags.
-- **Env documentation.** `.env.example` documents every analyst knob: the model chain, `REA_MAX_TOKENS`, `REA_AGENT_BUDGET_SECS`, `REA_VERIFY`, `REA_REVIEWERS`, `REA_VERIFY_ROUNDS`, and `REA_LOAD_BASE`.
+- **OpenRouter by default (and free).** With an `OPENROUTER_API_KEY`, REA runs on `deepseek/deepseek-v4.1-flash` and falls back to `openrouter/free`. OpenRouter offers free models, so you can run at no cost.
+- **Better quality with OpenCode Go.** For a higher-quality engine, subscribe to OpenCode Go, then set `REA_PROVIDER=opencode-go` and `REA_API_KEY`. The default model is `deepseek-v4.1-flash` with a `longcat-2.5-preview-free` fallback. Copy your API key from the OpenCode Console at <https://opencode.ai/console>.
+- **Any OpenAI-compatible provider.** `REA_API_BASE`, `REA_API_KEY`, and `REA_MODEL` point REA at any `/chat/completions` endpoint.
+- **Unchanged guarantee.** No unverified claim ships: the analyst must prove each citation or it is removed (prove-or-remove, then redact).
 
 # Features
 

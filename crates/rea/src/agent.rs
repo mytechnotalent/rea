@@ -28,8 +28,9 @@
 
 // Import dependencies from std
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt::Write,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -44,6 +45,15 @@ use crate::tools::{self, ToolContext};
 
 /// Default model used when `OPENROUTER_MODEL` is unset.
 const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
+
+/// `OpenCode Go` chat-completions endpoint.
+const OPENCODE_GO_ENDPOINT: &str = "https://opencode.ai/inference/go/v1/chat/completions";
+
+/// `OpenCode Go` default model id (`DeepSeek V4.1 Flash`).
+const OPENCODE_GO_MODEL: &str = "deepseek-v4.1-flash";
+
+/// `OpenCode Go` fallback model id.
+const OPENCODE_GO_FALLBACK: &str = "longcat-2.5-preview-free";
 
 /// Fallback models tried when the primary model is unavailable.
 const FALLBACK_MODELS: [&str; 1] = ["openrouter/free"];
@@ -157,8 +167,8 @@ const AI_BUDGET: Duration = Duration::from_secs(420);
 /// Per-request network timeout for `OpenRouter` calls.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// `OpenRouter` chat completions endpoint.
-const ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
+/// Default chat-completions endpoint (`OpenRouter`).
+const DEFAULT_ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 
 /// Maximum output tokens requested per turn.
 const MAX_OUTPUT: u32 = 16000;
@@ -178,7 +188,7 @@ preamble, process commentary, or notes about the tools you used.";
 /// `true` when `REA_VERIFY` is set to `1`, `true`, or `yes`.
 fn verify_enabled() -> bool {
     let on = |v: String| matches!(v.as_str(), "1" | "true" | "yes");
-    std::env::var("REA_VERIFY").is_ok_and(on)
+    config("REA_VERIFY").is_some_and(on)
 }
 
 /// Consecutive no-progress turns before the loop stops investigating.
@@ -187,17 +197,70 @@ const STALE_LIMIT: usize = 3;
 /// Observation returned in place of a repeated tool call.
 const DUPLICATE_NOTE: &str = "Duplicate call skipped; this evidence was already gathered.";
 
-/// Reads the API key from environment variables.
+/// Cached `.env` values, loaded once per process.
+static DOTENV: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+
+/// Resolves a configuration value from the environment, then `.env`.
+///
+/// # Arguments
+///
+/// * `name` - Variable name.
 ///
 /// # Returns
 ///
-/// Found key or `None`.
-fn read_env_var() -> Option<String> {
-    let key = std::env::var("OPENROUTER_API_KEY").ok()?;
-    (!key.is_empty()).then_some(key)
+/// The configured value, or `None`.
+fn config(name: &str) -> Option<String> {
+    env_value(name).or_else(|| env_map().get(name).cloned())
 }
 
-/// Parses an API key definition line from `.env`.
+/// Reads a non-empty environment variable.
+///
+/// # Arguments
+///
+/// * `name` - Variable name.
+///
+/// # Returns
+///
+/// The value, or `None`.
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+/// Returns the cached `.env` values for the current process.
+///
+/// # Returns
+///
+/// The parsed `.env` map.
+fn env_map() -> &'static BTreeMap<String, String> {
+    DOTENV.get_or_init(load_env_file)
+}
+
+/// Loads and parses the nearest `.env` file.
+///
+/// # Returns
+///
+/// The parsed key-value map, or an empty map.
+fn load_env_file() -> BTreeMap<String, String> {
+    match std::env::current_dir().ok().and_then(search_env) {
+        Some(content) => parse_env_map(&content),
+        None => BTreeMap::new(),
+    }
+}
+
+/// Parses `.env` file contents into a map.
+///
+/// # Arguments
+///
+/// * `content` - File contents.
+///
+/// # Returns
+///
+/// The parsed key-value map.
+fn parse_env_map(content: &str) -> BTreeMap<String, String> {
+    content.lines().filter_map(parse_env_line).collect()
+}
+
+/// Parses a `.env` definition line.
 ///
 /// # Arguments
 ///
@@ -205,12 +268,16 @@ fn read_env_var() -> Option<String> {
 ///
 /// # Returns
 ///
-/// Found key or `None`.
-fn parse_env_line(line: &str) -> Option<String> {
+/// The key-value pair, or `None`.
+fn parse_env_line(line: &str) -> Option<(String, String)> {
     let trimmed = line.trim();
-    let val = trimmed.strip_prefix("OPENROUTER_API_KEY=")?;
-    let clean = val.trim_matches('"').trim_matches('\'').trim();
-    (!clean.is_empty()).then(|| clean.to_string())
+    if trimmed.starts_with('#') {
+        return None;
+    }
+    let (key, value) = trimmed.split_once('=')?;
+    let clean = value.trim().trim_matches('"').trim_matches('\'').trim();
+    (!key.trim().is_empty() && !clean.is_empty())
+        .then(|| (key.trim().to_string(), clean.to_string()))
 }
 
 /// Searches ancestor directories for `.env` contents.
@@ -231,17 +298,6 @@ fn search_env(mut dir: std::path::PathBuf) -> Option<String> {
     }
 }
 
-/// Reads the API key from a local `.env` file in current or parent dirs.
-///
-/// # Returns
-///
-/// Found key or `None`.
-fn read_env_file() -> Option<String> {
-    let dir = std::env::current_dir().ok()?;
-    let content = search_env(dir)?;
-    content.lines().find_map(parse_env_line)
-}
-
 /// Discovers the `OpenRouter` API key from environment or `.env`.
 ///
 /// # Returns
@@ -249,16 +305,64 @@ fn read_env_file() -> Option<String> {
 /// The API key when available.
 #[must_use]
 pub fn load_api_key() -> Option<String> {
-    read_env_var().or_else(read_env_file)
+    config("REA_API_KEY").or_else(|| config("OPENROUTER_API_KEY"))
 }
 
-/// Resolves the model to request from `OpenRouter`.
+/// Resolves the chat-completions endpoint from `REA_API_BASE`.
+///
+/// # Returns
+///
+/// The configured endpoint, defaulting to the active provider's endpoint.
+fn endpoint() -> String {
+    config("REA_API_BASE").unwrap_or_else(default_endpoint)
+}
+
+/// Selects the default endpoint for the active provider.
+///
+/// # Returns
+///
+/// The `OpenCode Go` endpoint or the `OpenRouter` endpoint.
+fn default_endpoint() -> String {
+    if is_opencode_go() {
+        OPENCODE_GO_ENDPOINT.to_string()
+    } else {
+        DEFAULT_ENDPOINT.to_string()
+    }
+}
+
+/// Reports whether the `OpenCode Go` provider is active.
+///
+/// Active when `REA_PROVIDER=opencode-go` or `REA_API_BASE` points at `OpenCode Go`.
+///
+/// # Returns
+///
+/// `true` when `OpenCode Go` is selected.
+fn is_opencode_go() -> bool {
+    matches!(config("REA_PROVIDER").as_deref(), Some("opencode-go"))
+        || config("REA_API_BASE").is_some_and(|base| base.contains("opencode.ai"))
+}
+
+/// Resolves the default model for the active provider.
+///
+/// # Returns
+///
+/// The provider default model identifier.
+fn default_model() -> &'static str {
+    if is_opencode_go() {
+        OPENCODE_GO_MODEL
+    } else {
+        DEFAULT_MODEL
+    }
+}
+
+/// Resolves the model identifier from `REA_MODEL` or `OPENROUTER_MODEL`.
 ///
 /// # Returns
 ///
 /// Model identifier string.
 fn model_name() -> String {
-    std::env::var("OPENROUTER_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
+    let override_ = config("REA_MODEL").or_else(|| config("OPENROUTER_MODEL"));
+    override_.unwrap_or_else(|| default_model().to_string())
 }
 
 /// Builds the ordered model chain: primary first, then fallbacks.
@@ -285,9 +389,22 @@ fn models() -> Vec<String> {
 ///
 /// The fallback model identifiers.
 fn fallback_models() -> Vec<String> {
-    match std::env::var("REA_FALLBACK_MODELS") {
-        Ok(text) => split_models(&text),
-        Err(_) => FALLBACK_MODELS.iter().map(ToString::to_string).collect(),
+    if let Some(text) = config("REA_FALLBACK_MODELS") {
+        return split_models(&text);
+    }
+    default_chain().iter().map(|name| (*name).to_string()).collect()
+}
+
+/// Selects the default fallback chain for the active provider.
+///
+/// # Returns
+///
+/// The provider default fallback model identifiers.
+fn default_chain() -> &'static [&'static str] {
+    if is_opencode_go() {
+        &[OPENCODE_GO_FALLBACK]
+    } else {
+        &FALLBACK_MODELS
     }
 }
 
@@ -335,10 +452,7 @@ fn build_payload(model: &str, messages: &serde_json::Value) -> serde_json::Value
 ///
 /// The configured cap, defaulting to [`MAX_OUTPUT`].
 fn max_output() -> u32 {
-    std::env::var("REA_MAX_TOKENS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(MAX_OUTPUT)
+    config("REA_MAX_TOKENS").and_then(|s| s.parse().ok()).unwrap_or(MAX_OUTPUT)
 }
 
 /// Builds the JSON tool definition array from [`TOOL_SPECS`].
@@ -416,14 +530,23 @@ fn post_json(
     key: &str,
     body: &serde_json::Value,
 ) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
-    ureq::post(ENDPOINT)
+    ureq::post(&endpoint())
         .config()
         .timeout_global(Some(REQUEST_TIMEOUT))
         .build()
         .header("Authorization", &format!("Bearer {key}"))
-        .header("HTTP-Referer", "https://github.com/mytechnotalent/rea")
-        .header("X-Title", "Reverse Engineering Assistant")
+        .header("User-Agent", concat!("rea/", env!("CARGO_PKG_VERSION")))
+        .header("x-opencode-session", &session_id())
         .send_json(body)
+}
+
+/// Builds a stable per-run session identifier.
+///
+/// # Returns
+///
+/// The session identifier.
+fn session_id() -> String {
+    format!("rea-{}", std::process::id())
 }
 
 /// Extracts the assistant message from a chat completion response.
@@ -766,7 +889,7 @@ fn review_focuses() -> impl Iterator<Item = &'static str> {
 ///
 /// The configured count, defaulting to two reviewers.
 fn review_count() -> usize {
-    std::env::var("REA_REVIEWERS").ok().and_then(|s| s.parse().ok()).unwrap_or(2)
+    config("REA_REVIEWERS").and_then(|s| s.parse().ok()).unwrap_or(2)
 }
 
 /// Resolves the proof-round count from `REA_VERIFY_ROUNDS`.
@@ -775,8 +898,7 @@ fn review_count() -> usize {
 ///
 /// The configured count, defaulting to [`VERIFY_ROUNDS`].
 fn verify_rounds() -> usize {
-    std::env::var("REA_VERIFY_ROUNDS")
-        .ok()
+    config("REA_VERIFY_ROUNDS")
         .and_then(|s| s.parse().ok())
         .unwrap_or(VERIFY_ROUNDS)
 }
@@ -1454,7 +1576,7 @@ fn run_loop(key: &str, ctx: &ToolContext<'_>, evidence: &str, corpus: &str) -> O
 ///
 /// The configured budget, defaulting to [`AI_BUDGET`].
 fn ai_budget() -> Duration {
-    let secs = std::env::var("REA_AGENT_BUDGET_SECS").ok().and_then(|s| s.parse().ok());
+    let secs = config("REA_AGENT_BUDGET_SECS").and_then(|s| s.parse().ok());
     Duration::from_secs(secs.unwrap_or(AI_BUDGET.as_secs()))
 }
 
@@ -1514,18 +1636,22 @@ mod tests {
     // Import all parent module items
     use super::*;
 
-    /// Verifies parsing plain key lines.
+    /// Verifies parsing plain `.env` lines.
     #[test]
     fn test_parse_env_line_plain() {
-        let expected = Some("sk-123".to_string());
-        assert_eq!(parse_env_line("OPENROUTER_API_KEY=sk-123"), expected);
-        assert_eq!(parse_env_line("OTHER=val"), None);
+        let expected = Some(("REA_API_KEY".to_string(), "sk-123".to_string()));
+        assert_eq!(parse_env_line("REA_API_KEY=sk-123"), expected);
+        assert_eq!(
+            parse_env_line("REA_PROVIDER=opencode-go"),
+            Some(("REA_PROVIDER".to_string(), "opencode-go".to_string()))
+        );
+        assert_eq!(parse_env_line("# a comment"), None);
     }
 
-    /// Verifies parsing quoted key lines.
+    /// Verifies parsing quoted `.env` lines.
     #[test]
     fn test_parse_env_line_quoted() {
-        let expected = Some("sk-456".to_string());
+        let expected = Some(("OPENROUTER_API_KEY".to_string(), "sk-456".to_string()));
         assert_eq!(parse_env_line("OPENROUTER_API_KEY=\"sk-456\""), expected);
     }
 
@@ -1591,5 +1717,12 @@ mod tests {
             Some(model_name().as_str())
         );
         assert!(chain.len() >= 2);
+    }
+
+    /// Verifies the `OpenCode Go` provider defaults.
+    #[test]
+    fn test_opencode_go_defaults() {
+        assert_eq!(OPENCODE_GO_MODEL, "deepseek-v4.1-flash");
+        assert!(OPENCODE_GO_ENDPOINT.contains("opencode.ai"));
     }
 }

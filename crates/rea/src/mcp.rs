@@ -152,6 +152,8 @@ fn inspect_tools() -> Value {
 fn advanced_tools() -> Value {
     json!([
         {"name": "search_strings", "description": "Searches extracted strings and indicators.", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+        {"name": "disasm_function", "description": "Disassembles a function with its callers, callees, imports, and referenced strings.", "inputSchema": {"type": "object", "properties": {"address": {"type": "string"}}}},
+        {"name": "classify_regions", "description": "Segments the target by entropy and classifies each region.", "inputSchema": {"type": "object"}},
         {"name": "analyze_firmware", "description": "Performs SquashFS rootfs triage and security artifact hunting.", "inputSchema": {"type": "object"}},
         {"name": "analyze_javascript", "description": "Unpacks Electron ASAR archive and extracts IPC channels and secrets.", "inputSchema": {"type": "object"}},
         {"name": "generate_dossier", "description": "Generates complete nation-state artifact dossier beside target.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}
@@ -397,6 +399,8 @@ fn emulation_tool_name(name: &str) -> Option<&'static str> {
     match name {
         "emulate" => Some("emulate"),
         "unpack" => Some("unpack"),
+        "disasm_function" => Some("disasm"),
+        "classify_regions" => Some("regions"),
         _ => None,
     }
 }
@@ -1390,7 +1394,7 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 31);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 33);
     }
 
     /// Verifies runtime tool handlers reject empty sessions.

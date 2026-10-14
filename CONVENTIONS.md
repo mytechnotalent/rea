@@ -70,5 +70,13 @@ Only generated build-time output under `OUT_DIR` is exempt from the custom check
 
 <br>
 
+# README and release notes
+The README contains exactly one release-notes section: `# New in vX.Y.Z` for the current version
+only. On each release, replace that section in place and update the H1 title version. Never append a
+new `# New in` section and never keep prior ones — a README with two or more `# New in v` headings
+is a defect. Prior release notes belong only in GitHub Releases and `PLAN.md`.
+
+<br>
+
 # License
 [MIT License](https://github.com/mytechnotalent/rea/blob/main/LICENSE)

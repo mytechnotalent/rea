@@ -45,15 +45,35 @@ use crate::tools::{self, ToolContext};
 /// Default model used when `OPENROUTER_MODEL` is unset.
 const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
 
+/// Fallback models tried when the primary model is unavailable.
+const FALLBACK_MODELS: [&str; 2] = [
+    "deepseek/deepseek-v4.1-flash:free",
+    "nvidia/nemotron-3.5-lightning:free",
+];
+
 /// System prompt for the autonomous tool-using analyst agent.
-const AGENT_PROMPT: &str = "You are a principal reverse engineering analyst and the AUTHOR of the \
-final security assessment report. You have tools to inspect the target. Investigate autonomously \
-and ground every claim in tool observations and the provided evidence; never fabricate strings, \
-offsets, keys, or behavior. Call tools as often as needed, then write the complete report \
-yourself. Your report MUST contain the sections: Executive Overview; Target Summary; Architecture \
-Analysis; Program Logic; Recovered Secrets (flags, keys, C2, credentials); Indicators of \
-Compromise; and Recommendations. Cite concrete addresses and strings from the evidence. When a \
-fact is unknown or encrypted, state that plainly rather than guessing.";
+const AGENT_PROMPT: &str = "You are a principal reverse engineering analyst writing a \
+nation-state-grade intelligence assessment. You are the SOLE AUTHOR of the report: the evidence \
+dossier and tool results are your source material, and the deterministic findings appear after \
+your narrative as an evidence appendix. Investigate autonomously with the tools and never \
+fabricate strings, offsets, keys, or behavior.\n\nWrite the report in this exact structure:\n1. \
+BLUF - Bottom Line Up Front: 3-6 sentences with what the target is, what it does, the single most \
+important finding, and the overall risk.\n2. Target Identification & Provenance: family, hashes, \
+size/entropy, format/architecture, compiler/toolchain, build timestamps, symbols.\n3. Capability \
+Assessment: ATT&CK/MBC-mapped capabilities, cryptography, and network behavior, each with a \
+confidence of High, Medium, or Low and its evidence.\n4. Behavioral Analysis: an end-to-end \
+plain-English description of what the program does - entry flow, initialization, main \
+loop/state machine, I/O, persistence, and control flow.\n5. Function Analysis: for EACH key \
+function, a real English summary of what it does (inputs, outputs, control flow, side effects), \
+its callers/callees, and notable strings or constants, citing addresses.\n6. Network, C2 & IOCs.\n\
+7. Secrets & Cryptography.\n8. Vulnerabilities & Exploitation.\n9. Anti-Analysis & Evasion.\n10. \
+Attribution & Tooling: toolchain and build-environment clues and any actor/campaign indicators, \
+with confidence.\n11. Assessment Confidence & Limitations: what is known, what is inferred, and \
+what could not be determined.\n\nRules: explain the assembler in human terms rather than \
+restating mnemonics; attach evidence and a confidence to every non-obvious claim; prefer concrete \
+statements over hedging; and when a fact is unknown or encrypted, say so plainly rather than \
+guessing.\n\nOutput ONLY the report itself, beginning with its title and section 1. Never include \
+a preamble, process commentary, or notes about the tools you used or your investigation.";
 
 /// Instruction appended to the evidence dossier describing the model's role.
 const TOOL_NOTE: &str =
@@ -64,9 +84,33 @@ report: expand it into an authoritative write-up.";
 /// Maximum agent turns before stopping.
 const MAX_TURNS: usize = 90;
 
+/// System prompt for the adversarial adjudicator.
+const ADJUDICATOR_PROMPT: &str = "You are an adversarial adjudicator verifying a reverse \
+engineering report. Given the EVIDENCE, a DRAFT report, and REVIEWER FINDINGS, check every claim. \
+Remove or rewrite any statement not supported by the evidence, correct any unsupported address or \
+string, and keep the report's structure and writing quality. Output ONLY the corrected final \
+report, with no preamble or commentary.";
+
+/// Focus areas for the adversarial reviewers.
+const REVIEW_FOCUSES: [&str; 3] = [
+    "unsupported addresses, offsets, and literal strings",
+    "behavioral or logic claims the evidence does not support",
+    "secrets, keys, network endpoints, and attribution claims",
+];
+
+/// System prompt for an adversarial reviewer.
+const REVIEWER_PROMPT: &str = "You are an adversarial reviewer of a reverse engineering report. \
+Given the EVIDENCE and the DRAFT report, list every claim that is not fully supported by the \
+evidence and any contradiction you find. If everything is supported, reply exactly: none. Output \
+only the list of problems, with no commentary.";
+
 /// Tool specifications exposed to the model: name and description.
-const TOOL_SPECS: [(&str, &str); 11] = [
+const TOOL_SPECS: [(&str, &str); 12] = [
     ("functions", "List recovered and key functions."),
+    (
+        "disasm",
+        "Disassemble a function with its callers, callees, and referenced strings.",
+    ),
     ("decompile", "Decompile a function by name or hex address."),
     ("strings", "Search recovered strings for a substring."),
     ("read", "Hex dump bytes at an address: '0xADDR LEN'."),
@@ -97,11 +141,12 @@ const TOOL_SPECS: [(&str, &str); 11] = [
     ),
 ];
 
-/// Minimum quotation length considered by the grounding validator.
-const GROUNDING_MIN: usize = 6;
-
-/// Maximum unverified quotations listed in the grounding note.
+/// Maximum unverified quotations listed in the verification note.
 const GROUNDING_LIMIT: usize = 8;
+
+/// Banner prepended to a report whose citations are all proven.
+const VERIFIED_NOTE: &str =
+    "[Verification] All cited addresses and strings were proven against the engine evidence.\n\n";
 
 /// Wall-clock budget for the analyst loop before forcing a final answer.
 const AI_BUDGET: Duration = Duration::from_secs(420);
@@ -112,12 +157,26 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// `OpenRouter` chat completions endpoint.
 const ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 
+/// Maximum output tokens requested per turn.
+const MAX_OUTPUT: u32 = 16000;
+
 /// Maximum characters of one tool observation fed back into the conversation.
-const OBS_LIMIT: usize = 4000;
+const OBS_LIMIT: usize = 24000;
 
 /// Instruction that forces the model to stop investigating and write the report.
 const FINAL_NUDGE: &str = "Stop investigating now and write the complete final report using the \
-evidence gathered so far. Do not call any more tools.";
+evidence gathered so far. Do not call any more tools, and output only the report itself with no \
+preamble, process commentary, or notes about the tools you used.";
+
+/// Reports whether the adversarial adjudication pass is enabled.
+///
+/// # Returns
+///
+/// `true` when `REA_VERIFY` is set to `1`, `true`, or `yes`.
+fn verify_enabled() -> bool {
+    let on = |v: String| matches!(v.as_str(), "1" | "true" | "yes");
+    std::env::var("REA_VERIFY").is_ok_and(on)
+}
 
 /// Consecutive no-progress turns before the loop stops investigating.
 const STALE_LIMIT: usize = 3;
@@ -199,6 +258,53 @@ fn model_name() -> String {
     std::env::var("OPENROUTER_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
 }
 
+/// Builds the ordered model chain: primary first, then fallbacks.
+///
+/// The chain lets a depleted or rate-limited model fail over to a free model
+/// so an assessment is still produced.
+///
+/// # Returns
+///
+/// The de-duplicated model identifiers.
+fn models() -> Vec<String> {
+    let mut list = vec![model_name()];
+    for fallback in fallback_models() {
+        if !list.contains(&fallback) {
+            list.push(fallback);
+        }
+    }
+    list
+}
+
+/// Resolves the fallback models from `REA_FALLBACK_MODELS` or the defaults.
+///
+/// # Returns
+///
+/// The fallback model identifiers.
+fn fallback_models() -> Vec<String> {
+    match std::env::var("REA_FALLBACK_MODELS") {
+        Ok(text) => split_models(&text),
+        Err(_) => FALLBACK_MODELS.iter().map(ToString::to_string).collect(),
+    }
+}
+
+/// Splits a comma-separated model list.
+///
+/// # Arguments
+///
+/// * `text` - Comma-separated model identifiers.
+///
+/// # Returns
+///
+/// The trimmed, non-empty model identifiers.
+fn split_models(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Constructs a tool-enabled chat completion JSON payload.
 ///
 /// # Arguments
@@ -215,8 +321,21 @@ fn build_payload(model: &str, messages: &serde_json::Value) -> serde_json::Value
         "messages": messages,
         "tools": tool_defs(),
         "tool_choice": "auto",
-        "temperature": 0.2
+        "temperature": 0.2,
+        "max_tokens": max_output()
     })
+}
+
+/// Resolves the per-turn output-token cap from `REA_MAX_TOKENS`.
+///
+/// # Returns
+///
+/// The configured cap, defaulting to [`MAX_OUTPUT`].
+fn max_output() -> u32 {
+    std::env::var("REA_MAX_TOKENS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(MAX_OUTPUT)
 }
 
 /// Builds the JSON tool definition array from [`TOOL_SPECS`].
@@ -317,21 +436,50 @@ fn extract_message(val: &serde_json::Value) -> Option<serde_json::Value> {
     val.get("choices")?.get(0)?.get("message").cloned()
 }
 
-/// Executes a single chat completion turn.
+/// Sends a chat completion turn, optionally forbidding tool calls.
 ///
 /// # Arguments
 ///
 /// * `key` - API key.
 /// * `model` - Model identifier.
 /// * `messages` - Conversation message array.
+/// * `allow_tools` - Whether the model may call tools.
 ///
 /// # Returns
 ///
-/// The assistant message object.
-fn chat(key: &str, model: &str, messages: &serde_json::Value) -> Option<serde_json::Value> {
-    let body = build_payload(model, messages);
-    let val = send_request(key, &body).ok()?;
-    extract_message(&val)
+/// The assistant message object, or `None` on failure.
+fn request(
+    key: &str,
+    model: &str,
+    messages: &serde_json::Value,
+    allow_tools: bool,
+) -> Option<serde_json::Value> {
+    let mut body = build_payload(model, messages);
+    if !allow_tools {
+        body["tool_choice"] = json!("none");
+    }
+    send_one(key, &body, model)
+}
+
+/// Sends one prepared request and logs failures.
+///
+/// # Arguments
+///
+/// * `key` - API key.
+/// * `body` - Request JSON.
+/// * `model` - Model identifier, for diagnostics.
+///
+/// # Returns
+///
+/// The assistant message object, or `None`.
+fn send_one(key: &str, body: &serde_json::Value, model: &str) -> Option<serde_json::Value> {
+    match send_request(key, body) {
+        Ok(val) => extract_message(&val),
+        Err(err) => {
+            eprintln!("rea: request to {model} failed: {err}");
+            None
+        }
+    }
 }
 
 /// Appends target identity facts to evidence text.
@@ -465,7 +613,7 @@ fn append_code_header(out: &mut String, code: &rea_engine::disasm::Disassembly) 
 fn append_code_evidence(out: &mut String, a: &Analysis) {
     let Some(code) = &a.disassembly else { return };
     append_code_header(out, code);
-    for key in a.key_functions.iter().take(4) {
+    for key in a.key_functions.iter().take(6) {
         append_key_func_listing(out, key);
     }
 }
@@ -478,7 +626,10 @@ fn append_code_evidence(out: &mut String, a: &Analysis) {
 /// * `key` - Key function.
 fn append_key_func_listing(out: &mut String, key: &rea_engine::insights::KeyFunction) {
     let _ = writeln!(out, "KEY FUNCTION: {} at {:#x}", key.name, key.address);
-    for line in key.listing.iter().take(20) {
+    for reason in key.reasons.iter().take(4) {
+        let _ = writeln!(out, "  why: {reason}");
+    }
+    for line in key.listing.iter().take(rea_engine::insights::LISTING_LINES) {
         let _ = writeln!(out, "  {line}");
     }
 }
@@ -554,6 +705,65 @@ fn initial_messages(evidence: &str) -> serde_json::Value {
         {"role": "system", "content": AGENT_PROMPT},
         {"role": "user", "content": user}
     ])
+}
+
+/// Builds the adjudication messages for a draft report.
+///
+/// # Arguments
+///
+/// * `evidence` - Evidence dossier text.
+/// * `draft` - Author's draft report.
+/// * `findings` - Concatenated reviewer findings.
+///
+/// # Returns
+///
+/// The message array.
+fn adjudication_messages(evidence: &str, draft: &str, findings: &str) -> serde_json::Value {
+    let user = format!(
+        "EVIDENCE:\n{evidence}\n\nDRAFT REPORT:\n{draft}\n\nREVIEWER FINDINGS:\n{findings}"
+    );
+    json!([
+        {"role": "system", "content": ADJUDICATOR_PROMPT},
+        {"role": "user", "content": user}
+    ])
+}
+
+/// Builds the reviewer messages for a draft report.
+///
+/// # Arguments
+///
+/// * `evidence` - Evidence dossier text.
+/// * `draft` - Author's draft report.
+/// * `focus` - Area the reviewer scrutinizes.
+///
+/// # Returns
+///
+/// The message array.
+fn review_messages(evidence: &str, draft: &str, focus: &str) -> serde_json::Value {
+    let system = format!("{REVIEWER_PROMPT} Focus on {focus}.");
+    let user = format!("EVIDENCE:\n{evidence}\n\nDRAFT REPORT:\n{draft}");
+    json!([
+        {"role": "system", "content": system},
+        {"role": "user", "content": user}
+    ])
+}
+
+/// Selects the reviewer focus areas to run.
+///
+/// # Returns
+///
+/// The focus areas, bounded by `REA_REVIEWERS`.
+fn review_focuses() -> impl Iterator<Item = &'static str> {
+    REVIEW_FOCUSES.into_iter().take(review_count())
+}
+
+/// Resolves the reviewer count from `REA_REVIEWERS`.
+///
+/// # Returns
+///
+/// The configured count, defaulting to two reviewers.
+fn review_count() -> usize {
+    std::env::var("REA_REVIEWERS").ok().and_then(|s| s.parse().ok()).unwrap_or(2)
 }
 
 /// Reads a string field from a JSON value.
@@ -633,6 +843,7 @@ fn append_tool(messages: &mut serde_json::Value, id: &str, content: &str) {
 }
 
 /// Conversation state for one analyst run.
+#[derive(Default)]
 struct Session {
     /// Conversation message array.
     messages: serde_json::Value,
@@ -640,11 +851,20 @@ struct Session {
     /// Evidence corpus for grounding.
     seen: String,
 
+    /// Evidence dossier text for adjudication.
+    evidence: String,
+
     /// Signatures of tool calls already executed.
     called: BTreeSet<String>,
 
     /// Consecutive turns that produced no new tool call.
     stale: usize,
+
+    /// Ordered model chain, primary first.
+    models: Vec<String>,
+
+    /// Index of the model currently in use.
+    current: usize,
 }
 
 impl Session {
@@ -654,13 +874,170 @@ impl Session {
     ///
     /// * `evidence` - Evidence dossier text.
     /// * `corpus` - Evidence plus full string set for grounding.
+    /// * `models` - Ordered model chain.
     ///
     /// # Returns
     ///
     /// A new session.
-    fn new(evidence: &str, corpus: &str) -> Self {
-        let messages = initial_messages(evidence);
-        Self { messages, seen: corpus.to_string(), called: BTreeSet::new(), stale: 0 }
+    fn new(evidence: &str, corpus: &str, models: Vec<String>) -> Self {
+        let mut session = Self::empty(models);
+        session.messages = initial_messages(evidence);
+        session.seen = corpus.to_string();
+        session.evidence = evidence.to_string();
+        session
+    }
+
+    /// Runs an adversarial adjudication pass, falling back to the draft.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `draft` - Author's draft report.
+    ///
+    /// # Returns
+    ///
+    /// The verified report.
+    fn adjudicate(&self, key: &str, draft: &str) -> String {
+        if !verify_enabled() {
+            return ground(draft, &self.seen);
+        }
+        let findings = self.review_all(key, draft);
+        let final_text = self.settle(key, draft, &findings);
+        ground(&final_text, &self.seen)
+    }
+
+    /// Runs every adversarial reviewer over the draft.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `draft` - Author's draft report.
+    ///
+    /// # Returns
+    ///
+    /// The concatenated reviewer findings.
+    fn review_all(&self, key: &str, draft: &str) -> String {
+        let mut findings = String::new();
+        for focus in review_focuses() {
+            if let Some(text) = self.review(key, draft, focus) {
+                findings.push_str(&text);
+                findings.push('\n');
+            }
+        }
+        findings
+    }
+
+    /// Runs one adversarial reviewer focused on an area.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `draft` - Author's draft report.
+    /// * `focus` - Area the reviewer scrutinizes.
+    ///
+    /// # Returns
+    ///
+    /// The reviewer findings, or `None`.
+    fn review(&self, key: &str, draft: &str, focus: &str) -> Option<String> {
+        let messages = review_messages(&self.evidence, draft, focus);
+        self.ask_context(key, &messages)
+    }
+
+    /// Adjudicates the draft against the reviewer findings.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `draft` - Author's draft report.
+    /// * `findings` - Concatenated reviewer findings.
+    ///
+    /// # Returns
+    ///
+    /// The corrected report, or the draft when there were no findings.
+    fn settle(&self, key: &str, draft: &str, findings: &str) -> String {
+        if findings.trim().is_empty() {
+            return draft.to_string();
+        }
+        let messages = adjudication_messages(&self.evidence, draft, findings);
+        self.ask_context(key, &messages).unwrap_or_else(|| draft.to_string())
+    }
+
+    /// Sends one non-tool turn and returns its text content.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `messages` - Conversation message array.
+    ///
+    /// # Returns
+    ///
+    /// The message content, or `None`.
+    fn ask_context(&self, key: &str, messages: &serde_json::Value) -> Option<String> {
+        let content = request(key, self.active_model(), messages, false);
+        content
+            .map(|message| text_field(&message, "content"))
+            .filter(|text| !text.trim().is_empty())
+    }
+
+    /// Creates a session with no conversation yet.
+    ///
+    /// # Arguments
+    ///
+    /// * `models` - Ordered model chain.
+    ///
+    /// # Returns
+    ///
+    /// A blank session.
+    fn empty(models: Vec<String>) -> Self {
+        Self { models, ..Self::default() }
+    }
+
+    /// Sends a turn, failing over to the next model on error.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `allow_tools` - Whether the model may call tools.
+    ///
+    /// # Returns
+    ///
+    /// The assistant message object, or `None` when every model failed.
+    fn ask(&mut self, key: &str, allow_tools: bool) -> Option<serde_json::Value> {
+        while self.current < self.models.len() {
+            if let Some(message) = self.try_current(key, allow_tools) {
+                return Some(message);
+            }
+        }
+        None
+    }
+
+    /// Requests from the current model, advancing on failure.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `allow_tools` - Whether the model may call tools.
+    ///
+    /// # Returns
+    ///
+    /// The assistant message object, or `None` on failure.
+    fn try_current(&mut self, key: &str, allow_tools: bool) -> Option<serde_json::Value> {
+        let model = self.models[self.current].clone();
+        let message = request(key, &model, &self.messages, allow_tools);
+        if message.is_none() {
+            eprintln!("rea: model {model} unavailable; failing over");
+            self.current += 1;
+        }
+        message
+    }
+
+    /// Returns the model currently in use.
+    ///
+    /// # Returns
+    ///
+    /// The active model identifier.
+    fn active_model(&self) -> &str {
+        self.models.get(self.current).map_or("none", String::as_str)
     }
 
     /// Advances one turn, executing tools or returning the final report.
@@ -677,10 +1054,27 @@ impl Session {
         let calls = calls_of(message);
         self.messages.as_array_mut()?.push(message.clone());
         if calls.is_empty() {
-            return final_report(message, &self.seen);
+            return self.blank_or_report(message);
         }
         self.run_calls(&calls, ctx);
         None
+    }
+
+    /// Returns the final report, or counts an empty reply as a stale turn.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Assistant message object.
+    ///
+    /// # Returns
+    ///
+    /// The grounded report, or `None` when the reply was empty.
+    fn blank_or_report(&mut self, message: &serde_json::Value) -> Option<String> {
+        let report = final_report(message);
+        if report.is_none() {
+            self.stale += 1;
+        }
+        report
     }
 
     /// Runs the loop until a report is produced, the budget expires, or turns run out.
@@ -688,24 +1082,17 @@ impl Session {
     /// # Arguments
     ///
     /// * `key` - API key.
-    /// * `model` - Model identifier.
     /// * `ctx` - Tool context.
     /// * `deadline` - Wall-clock budget deadline.
     ///
     /// # Returns
     ///
     /// The final report, or `None` when the budget or turn limit is reached.
-    fn run(
-        &mut self,
-        key: &str,
-        model: &str,
-        ctx: &ToolContext<'_>,
-        deadline: Instant,
-    ) -> Option<String> {
+    fn run(&mut self, key: &str, ctx: &ToolContext<'_>, deadline: Instant) -> Option<String> {
         let mut turn = 0;
         while !expired(deadline) && turn < MAX_TURNS && self.stale < STALE_LIMIT {
             turn += 1;
-            if let Some(text) = self.turn(turn, key, model, ctx) {
+            if let Some(text) = self.turn(turn, key, ctx) {
                 return Some(text);
             }
         }
@@ -718,21 +1105,14 @@ impl Session {
     ///
     /// * `turn` - One-based turn number.
     /// * `key` - API key.
-    /// * `model` - Model identifier.
     /// * `ctx` - Tool context.
     ///
     /// # Returns
     ///
     /// The final report when the model stops calling tools.
-    fn turn(
-        &mut self,
-        turn: usize,
-        key: &str,
-        model: &str,
-        ctx: &ToolContext<'_>,
-    ) -> Option<String> {
-        eprintln!("rea: agent turn {turn}");
-        let message = chat(key, model, &self.messages)?;
+    fn turn(&mut self, turn: usize, key: &str, ctx: &ToolContext<'_>) -> Option<String> {
+        eprintln!("rea: agent turn {turn} ({})", self.active_model());
+        let message = self.ask(key, true)?;
         self.finish(&message, ctx)
     }
 
@@ -741,15 +1121,14 @@ impl Session {
     /// # Arguments
     ///
     /// * `key` - API key.
-    /// * `model` - Model identifier.
     ///
     /// # Returns
     ///
     /// The grounded report, or `None`.
-    fn finalize(&mut self, key: &str, model: &str) -> Option<String> {
+    fn finalize(&mut self, key: &str) -> Option<String> {
         push_user(&mut self.messages, FINAL_NUDGE);
-        let message = chat_none(key, model, &self.messages)?;
-        final_report(&message, &self.seen)
+        let message = self.ask(key, false)?;
+        final_report(&message)
     }
 
     /// Executes tool calls, folding observations into the corpus.
@@ -846,39 +1225,23 @@ fn push_user(messages: &mut serde_json::Value, content: &str) {
     }
 }
 
-/// Executes a chat turn that forbids further tool calls.
-///
-/// # Arguments
-///
-/// * `key` - API key.
-/// * `model` - Model identifier.
-/// * `messages` - Conversation message array.
-///
-/// # Returns
-///
-/// The assistant message object.
-fn chat_none(key: &str, model: &str, messages: &serde_json::Value) -> Option<serde_json::Value> {
-    let mut body = build_payload(model, messages);
-    body["tool_choice"] = json!("none");
-    send_request(key, &body).ok().and_then(|val| extract_message(&val))
-}
-
-/// Produces the final grounded report from an assistant message.
+/// Extracts the author's draft report from an assistant message.
 ///
 /// # Arguments
 ///
 /// * `message` - Assistant message object.
-/// * `seen` - Evidence dossier plus tool observations.
 ///
 /// # Returns
 ///
-/// The grounded report, or `None` when the reply is empty.
-fn final_report(message: &serde_json::Value, seen: &str) -> Option<String> {
+/// The draft report, or `None` when the reply is empty.
+fn final_report(message: &serde_json::Value) -> Option<String> {
     let content = text_field(message, "content");
-    (!content.trim().is_empty()).then(|| ground(&content, seen))
+    (!content.trim().is_empty()).then_some(content)
 }
 
-/// Flags report quotations that are absent from the evidence corpus.
+/// Verifies report citations against the evidence corpus.
+///
+/// Every cited address and quoted string must exist in the engine evidence.
 ///
 /// # Arguments
 ///
@@ -887,17 +1250,17 @@ fn final_report(message: &serde_json::Value, seen: &str) -> Option<String> {
 ///
 /// # Returns
 ///
-/// The report, annotated when unverified quotations are found.
+/// The report with a verification note appended.
 fn ground(text: &str, seen: &str) -> String {
     let bad = unverified(text, seen);
     if bad.is_empty() {
-        return text.to_string();
+        return format!("{VERIFIED_NOTE}{text}");
     }
-    let note = format!("{} unverified quotation(s): {}", bad.len(), sample(&bad));
-    format!("{text}\n\n[Grounding] {note}")
+    let note = format!("{} unverified citation(s): {}", bad.len(), sample(&bad));
+    format!("{text}\n\n[Verification] {note}")
 }
 
-/// Selects report quotations absent from the evidence corpus.
+/// Selects report citations absent from the evidence corpus.
 ///
 /// # Arguments
 ///
@@ -906,10 +1269,46 @@ fn ground(text: &str, seen: &str) -> String {
 ///
 /// # Returns
 ///
-/// The unverified quotations.
+/// The unverified citations.
 fn unverified(text: &str, seen: &str) -> Vec<String> {
-    let kept = |q: &String| q.len() >= GROUNDING_MIN && !seen.contains(q.as_str());
-    quotes(text).into_iter().filter(kept).collect()
+    let mut tokens = quotes(text);
+    tokens.extend(addresses(text));
+    tokens.retain(|token| !proven(seen, token));
+    tokens
+}
+
+/// Reports whether a citation exists in the evidence corpus.
+///
+/// # Arguments
+///
+/// * `seen` - Evidence dossier plus tool observations.
+/// * `token` - Cited address or string.
+///
+/// # Returns
+///
+/// `true` when the token is present in the corpus.
+fn proven(seen: &str, token: &str) -> bool {
+    seen.contains(token) || seen.contains(token.trim_start_matches("0x"))
+}
+
+/// Collects hexadecimal addresses cited in report text.
+///
+/// # Arguments
+///
+/// * `text` - Report text.
+///
+/// # Returns
+///
+/// The cited addresses.
+fn addresses(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for part in text.split("0x").skip(1) {
+        let hex: String = part.chars().take_while(char::is_ascii_hexdigit).collect();
+        if hex.len() >= 3 {
+            out.push(format!("0x{hex}"));
+        }
+    }
+    out
 }
 
 /// Builds a bounded comma-separated sample of strings.
@@ -944,7 +1343,6 @@ fn quotes(text: &str) -> Vec<String> {
 /// # Arguments
 ///
 /// * `key` - API key.
-/// * `model` - Model identifier.
 /// * `ctx` - Tool context.
 /// * `evidence` - Evidence dossier.
 /// * `corpus` - Evidence plus full string set for grounding.
@@ -952,17 +1350,11 @@ fn quotes(text: &str) -> Vec<String> {
 /// # Returns
 ///
 /// The final report, or `None`.
-fn run_loop(
-    key: &str,
-    model: &str,
-    ctx: &ToolContext<'_>,
-    evidence: &str,
-    corpus: &str,
-) -> Option<String> {
-    let mut session = Session::new(evidence, corpus);
+fn run_loop(key: &str, ctx: &ToolContext<'_>, evidence: &str, corpus: &str) -> Option<String> {
+    let mut session = Session::new(evidence, corpus, models());
     let deadline = Instant::now() + ai_budget();
-    let draft = session.run(key, model, ctx, deadline);
-    draft.or_else(|| session.finalize(key, model))
+    let draft = session.run(key, ctx, deadline).or_else(|| session.finalize(key))?;
+    Some(session.adjudicate(key, &draft))
 }
 
 /// Resolves the analyst wall-clock budget from `REA_AGENT_BUDGET_SECS`.
@@ -988,12 +1380,27 @@ fn ai_budget() -> Duration {
 #[must_use]
 pub fn evaluate(analysis: &Analysis, bytes: &[u8]) -> Option<String> {
     let key = load_api_key()?;
-    let model = model_name();
-    eprintln!("rea: running autonomous AI analyst loop ({model})");
+    eprintln!("rea: autonomous AI analyst loop: {}", models().join(" -> "));
     let evidence = build_evidence(analysis);
     let corpus = corpus(analysis, &evidence);
     let ctx = ToolContext { analysis, bytes };
-    run_loop(&key, &model, &ctx, &evidence, &corpus)
+    announce(run_loop(&key, &ctx, &evidence, &corpus))
+}
+
+/// Reports whether the analyst produced a report.
+///
+/// # Arguments
+///
+/// * `report` - Analyst output, when produced.
+///
+/// # Returns
+///
+/// The report, unchanged.
+fn announce(report: Option<String>) -> Option<String> {
+    if report.is_none() {
+        eprintln!("rea: AI assessment unavailable; check OpenRouter credits and OPENROUTER_MODEL");
+    }
+    report
 }
 
 /// Builds the grounding corpus from the dossier and every extracted string.
@@ -1071,5 +1478,24 @@ mod tests {
     fn test_tool_defs_shape() {
         let defs = tool_defs();
         assert_eq!(defs.as_array().unwrap().len(), TOOL_SPECS.len());
+    }
+
+    /// Verifies the request payload bounds output tokens and exposes tools.
+    #[test]
+    fn test_payload_bounds_output() {
+        let payload = build_payload("m", &json!([]));
+        assert_eq!(payload["max_tokens"], MAX_OUTPUT);
+        assert!(payload["tools"].is_array());
+    }
+
+    /// Verifies the model chain starts with the primary and has fallbacks.
+    #[test]
+    fn test_models_chain() {
+        let chain = models();
+        assert_eq!(
+            chain.first().map(String::as_str),
+            Some(model_name().as_str())
+        );
+        assert!(chain.len() >= 2);
     }
 }

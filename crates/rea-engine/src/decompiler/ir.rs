@@ -233,8 +233,25 @@ pub fn lift(line: &InstructionLine, arch: Arch) -> Line {
 fn split_asm(text: &str) -> (String, &str) {
     let trimmed = text.trim();
     match trimmed.split_once(char::is_whitespace) {
-        Some((m, rest)) => (m.to_ascii_lowercase(), rest.trim()),
-        None => (trimmed.to_ascii_lowercase(), ""),
+        Some((m, rest)) => (base_mnemonic(m), rest.trim()),
+        None => (base_mnemonic(trimmed), ""),
+    }
+}
+
+/// Lowercases a mnemonic and drops an ARM width suffix.
+///
+/// # Arguments
+///
+/// * `text` - Raw mnemonic text.
+///
+/// # Returns
+///
+/// The lowercased base mnemonic.
+fn base_mnemonic(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    match lower.strip_suffix(".w").or_else(|| lower.strip_suffix(".n")) {
+        Some(base) => base.to_string(),
+        None => lower,
     }
 }
 
@@ -431,9 +448,28 @@ fn assign_pair(mnemonic: &str, dst: &str, src: &str, extra: Option<&str>) -> Ins
         return Inst::Assign { dst: parse_expr(dst), src: address_of(src) };
     }
     if STORES.contains(&mnemonic) {
-        return Inst::Store { addr: parse_expr(dst), src: parse_expr(src) };
+        return store_from(dst, src);
     }
     value_pair(mnemonic, dst, src, extra)
+}
+
+/// Lifts a store, ordering the memory and value operands correctly.
+///
+/// Handles both x86 `store [mem], reg` and ARM/RISC-V `store reg, [mem]`.
+///
+/// # Arguments
+///
+/// * `dst` - First operand text.
+/// * `src` - Second operand text.
+///
+/// # Returns
+///
+/// The store instruction.
+fn store_from(dst: &str, src: &str) -> Inst {
+    if is_memory(dst) {
+        return Inst::Store { addr: address_of(dst), src: parse_expr(src) };
+    }
+    Inst::Store { addr: address_of(src), src: parse_expr(dst) }
 }
 
 /// Lifts a value-producing two- or three-operand instruction.
@@ -535,12 +571,28 @@ fn arith_op(mnemonic: &str) -> Option<&'static str> {
 fn parse_expr(text: &str) -> Expr {
     let trimmed = strip_size(text.trim()).trim_start_matches('#');
     if let Some(inner) = bracketed(trimmed) {
-        return Expr::Mem(Box::new(parse_sum(inner)));
+        return Expr::Mem(Box::new(drop_zero(parse_sum(inner))));
     }
     if let Some(inner) = parenthesized(trimmed) {
         return Expr::Mem(Box::new(inner));
     }
     parse_atom(trimmed)
+}
+
+/// Removes a zero offset from an address expression.
+///
+/// # Arguments
+///
+/// * `expr` - Address expression.
+///
+/// # Returns
+///
+/// The base expression when the offset is zero, otherwise the expression.
+fn drop_zero(expr: Expr) -> Expr {
+    match expr {
+        Expr::Bin("+", base, rhs) if *rhs == Expr::Imm(0) => *base,
+        other => other,
+    }
 }
 
 /// Removes a leading x86 operand size prefix.
@@ -803,11 +855,66 @@ fn is_hex_token(token: &str) -> bool {
 ///
 /// The destination and source operands when present.
 fn split_operands(operands: &str) -> (Option<&str>, Option<&str>, Option<&str>) {
-    let mut parts = operands.split(',');
-    let dst = nonempty(parts.next().unwrap_or_default());
-    let src = parts.next().and_then(nonempty);
-    let extra = parts.next().and_then(nonempty);
+    let cuts = top_level_commas(operands);
+    let parts = slice_parts(operands, &cuts);
+    let dst = parts.first().copied().and_then(nonempty);
+    let src = parts.get(1).copied().and_then(nonempty);
+    let extra = parts.get(2).copied().and_then(nonempty);
     (dst, src, extra)
+}
+
+/// Finds top-level comma positions, ignoring brackets.
+///
+/// # Arguments
+///
+/// * `text` - Operand text.
+///
+/// # Returns
+///
+/// Byte indices of commas outside any `[]`, `()`, or `{}`.
+fn top_level_commas(text: &str) -> Vec<usize> {
+    let mut state = (0i32, Vec::new());
+    for (index, c) in text.char_indices() {
+        step_depth(&mut state, index, c);
+    }
+    state.1
+}
+
+/// Updates nesting depth and records top-level commas.
+///
+/// # Arguments
+///
+/// * `state` - Running depth and comma positions.
+/// * `index` - Current byte index.
+/// * `c` - Current character.
+fn step_depth(state: &mut (i32, Vec<usize>), index: usize, c: char) {
+    match c {
+        '[' | '(' | '{' => state.0 += 1,
+        ']' | ')' | '}' => state.0 -= 1,
+        ',' if state.0 == 0 => state.1.push(index),
+        _ => {}
+    }
+}
+
+/// Slices text at the given byte positions.
+///
+/// # Arguments
+///
+/// * `text` - Source text.
+/// * `cuts` - Byte indices of separators.
+///
+/// # Returns
+///
+/// The substrings between the separators.
+fn slice_parts<'a>(text: &'a str, cuts: &[usize]) -> Vec<&'a str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    for &cut in cuts {
+        parts.push(&text[start..cut]);
+        start = cut + 1;
+    }
+    parts.push(&text[start..]);
+    parts
 }
 
 /// Returns trimmed operand text when non-empty.
@@ -917,7 +1024,7 @@ fn joined_pair(mnemonic: &str, dst: &str, src: &str) -> String {
 /// The address expression without a dereference.
 fn address_of(text: &str) -> Expr {
     let inner = bracketed(strip_size(text.trim()));
-    inner.map_or_else(|| parse_expr(text), parse_sum)
+    inner.map_or_else(|| parse_expr(text), |sum| drop_zero(parse_sum(sum)))
 }
 
 #[cfg(test)]
@@ -987,6 +1094,41 @@ mod tests {
     fn test_lift_thumb_return() {
         let lifted = lift(&line(0x1000, "bx lr"), Arch::Arm);
         assert_eq!(lifted.inst, Inst::Ret);
+    }
+
+    /// Verifies bracketed ARM operands are not split on the inner comma.
+    #[test]
+    fn test_split_operands_bracket() {
+        assert_eq!(
+            split_operands("r3,[r3,#0]"),
+            (Some("r3"), Some("[r3,#0]"), None)
+        );
+    }
+
+    /// Verifies an ARM load dereferences its base register.
+    #[test]
+    fn test_lift_arm_load() {
+        let lifted = lift(&line(0x1000, "ldrb r3,[r3,#0]"), Arch::Arm);
+        let expected = Inst::Assign {
+            dst: Expr::Reg("r3".into()),
+            src: Expr::Mem(Box::new(Expr::Reg("r3".into()))),
+        };
+        assert_eq!(lifted.inst, expected);
+    }
+
+    /// Verifies an ARM store orders memory as the destination.
+    #[test]
+    fn test_lift_arm_store_order() {
+        let lifted = lift(&line(0x1000, "str r3,[r6,#0]"), Arch::Arm);
+        let expected = Inst::Store { addr: Expr::Reg("r6".into()), src: Expr::Reg("r3".into()) };
+        assert_eq!(lifted.inst, expected);
+    }
+
+    /// Verifies an ARM width suffix is stripped before matching.
+    #[test]
+    fn test_lift_arm_width_suffix() {
+        let lifted = lift(&line(0x1000, "strb.w r3,[sp,#7]"), Arch::Arm);
+        assert!(matches!(lifted.inst, Inst::Store { .. }));
     }
 
     /// Verifies that a Thumb conditional branch is recognized.

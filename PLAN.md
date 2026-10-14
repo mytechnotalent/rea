@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v5.3.0
+**Current release:** v5.4.0
 **Document owner:** Kevin Thomas
 
 ---
@@ -46,6 +46,45 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.2.0 | Autonomous analyst rebuilt: native tool calling, 90-turn loop, LLM-authored grounded report, entropy regions + 8051 tools, DeepSeek V4.1 Flash default. |
 | v5.2.1 | Fix decompiler infinite loop (self/cyclic copy map, oscillating fixpoints); bound the analyst loop with a wall-clock budget and forced final report. |
 | v5.3.0 | Firmware container decoding + load-base re-basing (`REA_LOAD_BASE`), analyst dedupe/no-progress stop, full-string grounding, instruction-annotation accuracy fixes. |
+| v5.3.1 | Fix silent AI failure (missing `max_tokens` caused HTTP 402); add `disasm` tool (function listing + call graph + strings); richer evidence; behavior-forcing prompt; surface API errors; automatic model failover. |
+| v5.4.0 | Nation-state report redesign: LLM authors the full intelligence assessment (BLUF, capability/behavior/function analysis, attribution), deterministic findings become an Evidence Appendix, always-on citation verification plus adversarial reviewers and an adjudicator (`REA_VERIFY`). |
+
+---
+
+## 3a. v5.4.0 — Nation-State Report Redesign (in progress)
+
+**Goal:** the report is the product. An LLM authors a nation-state-grade intelligence assessment
+end to end; the deterministic engine is the evidence appendix. No unproven claim enters the report.
+
+**Architecture — Author, Adversarial Reviewers, Adjudicator:**
+
+1. **Author** — the analyst loop writes the full narrative with inline citations (addresses,
+   strings, offsets) and a confidence (High/Medium/Low) per non-obvious claim.
+2. **Deterministic verifier (always on)** — every cited address and quoted string must exist in the
+   evidence corpus (dossier + strings + all tool observations); anything absent is flagged.
+3. **Adversarial reviewers (LLM, opt-in)** — independent passes attempt to falsify each claim
+   against the evidence and report contradictions and unsupported statements.
+4. **Adjudicator (LLM, opt-in)** — resolves verdicts; only proven claims survive into the final
+   report, and everything rejected is listed in a verification appendix.
+
+**Report structure (LLM-authored body, deterministic evidence appendix):**
+
+1. BLUF — Bottom Line Up Front
+2. Target Identification & Provenance
+3. Capability Assessment (ATT&CK/MBC + crypto + network, each with confidence)
+4. Behavioral Analysis (end-to-end, plain English)
+5. Function Analysis (per key function: real summary, call graph, constants, pseudocode)
+6. Network, C2 & IOCs
+7. Secrets & Cryptography
+8. Vulnerabilities & Exploitation
+9. Anti-Analysis & Evasion
+10. Attribution & Tooling
+11. Assessment Confidence & Limitations
+12. Evidence Appendix (function inventory, call graph, strings, sections, imports)
+
+**Status:** report assembly now leads with the authored narrative and relegates deterministic
+findings to an Evidence Appendix; the analyst prompt emits the structure above; deterministic
+verification covers addresses and strings. Adversarial reviewers and the adjudicator are next.
 
 ---
 

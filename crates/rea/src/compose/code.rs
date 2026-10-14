@@ -69,12 +69,12 @@ const KEY_NOTE: &str = "Inferred: functions are ranked by the capability-relevan
 call and the indicators they reference. Listings use Intel syntax with imports, functions, and \
 strings resolved in comments.";
 
-/// Note placed above the full walkthrough.
+/// Note placed above the function analysis.
 const WALKTHROUGH_NOTE: &str =
-    "Observed: the complete assembler for every recovered function is written to \
-    re-<name>.asm. This section breaks down the largest recovered functions: the raw listing, a \
-    plain-language summary of what the function does, and dual code/data analysis of any \
-    embedded literal pools.";
+    "Observed: the full instruction stream for every recovered function is written to \
+    re-<name>.asm. This section summarizes what each recovered function does in plain language, \
+    with its call relationships and embedded literal pools. Read the .asm artifact when you need \
+    the raw assembly.";
 
 /// Data pool table columns.
 const DATA_HEADERS: [&str; 5] = [
@@ -91,11 +91,11 @@ const DECOMP_CAP: usize = 200;
 /// Most functions per report rendered as recovered pseudo-C.
 const DECOMP_LIMIT: usize = 64;
 
-/// Most functions rendered in the assembly walkthrough.
+/// Most functions rendered in the function analysis.
 const WALKTHROUGH_FUNCTIONS: usize = 16;
 
-/// Most raw instructions listed per walkthrough function.
-const RAW_CAP: usize = 160;
+/// Most literal-pool rows shown per function.
+const DATA_POOL_CAP: usize = 12;
 
 /// Builds the code analysis and key function sections.
 ///
@@ -378,10 +378,29 @@ fn walkthrough(analysis: &Analysis, code: &Disassembly) -> Section {
     let section = walkthrough_heading();
     let ev = build_walkthrough_evidence(analysis, code);
     let selected = decompile_targets(code);
-    let funcs = sorted_functions(code).into_iter().take(WALKTHROUGH_FUNCTIONS);
-    funcs.fold(section, |s, f| {
+    let funcs = ranked_functions(analysis, code);
+    funcs.into_iter().fold(section, |s, f| {
         with_function_walkthrough(s, analysis, ev.as_ref(), code, f, &selected)
     })
+}
+
+/// Lists the analyst-ranked functions, resolved to recovered functions.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// The ranked functions in descending relevance.
+fn ranked_functions<'a>(analysis: &'a Analysis, code: &'a Disassembly) -> Vec<&'a Function> {
+    analysis
+        .key_functions
+        .iter()
+        .take(WALKTHROUGH_FUNCTIONS)
+        .filter_map(|key| code.functions.get(&key.address))
+        .collect()
 }
 
 /// Builds the walkthrough section heading.
@@ -391,22 +410,7 @@ fn walkthrough(analysis: &Analysis, code: &Disassembly) -> Section {
 /// The section with its explanatory note.
 fn walkthrough_heading() -> Section {
     let note = text::paragraph(WALKTHROUGH_NOTE);
-    Section::new("Assembly Walkthrough & Instruction Analysis").with(note)
-}
-
-/// Lists the recovered functions by address.
-///
-/// # Arguments
-///
-/// * `code` - Recovered code structure.
-///
-/// # Returns
-///
-/// The functions in ascending address order.
-fn sorted_functions(code: &Disassembly) -> Vec<&Function> {
-    let mut funcs: Vec<&Function> = code.functions.values().collect();
-    funcs.sort_by_key(|f| f.address);
-    funcs
+    Section::new("Function Analysis").with(note)
 }
 
 /// Builds the evidence resolver precomputed with the recovered call graph.
@@ -448,10 +452,89 @@ fn with_function_walkthrough(
     selected: &BTreeSet<u64>,
 ) -> Section {
     let section = append_func_heading(section, code, func);
-    let section = append_raw_listing(section, func);
-    let section = append_selected(section, analysis, func, selected);
     let section = append_func_summary(section, ev, code, func);
+    let section = append_selected(section, analysis, func, selected);
+    let section = append_call_graph(section, code, func);
     append_data_pools(section, code, func)
+}
+
+/// Appends the function's callers, callees, and imported calls.
+///
+/// # Arguments
+///
+/// * `section` - Section being built.
+/// * `code` - Recovered code structure.
+/// * `func` - Function to describe.
+///
+/// # Returns
+///
+/// The extended section.
+fn append_call_graph(section: Section, code: &Disassembly, func: &Function) -> Section {
+    let targets: Vec<String> = func.calls.iter().map(|a| code.name_of(*a)).collect();
+    let imports: Vec<String> = func.imports.iter().cloned().collect();
+    let text = graph_text(code, func, &targets, &imports);
+    section.with(Block::Paragraph(text))
+}
+
+/// Builds the call-graph sentence for a function.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+/// * `func` - Function to describe.
+/// * `targets` - Callee names.
+/// * `imports` - Imported call names.
+///
+/// # Returns
+///
+/// The sentence.
+fn graph_text(
+    code: &Disassembly,
+    func: &Function,
+    targets: &[String],
+    imports: &[String],
+) -> String {
+    let inbound = callers_of(code, func.address);
+    let (calls, used) = (join_names(targets), join_names(imports));
+    format!(
+        "Calls: {calls}. Called by: {}. Imports used: {used}.",
+        join_names(&inbound)
+    )
+}
+
+/// Joins names or returns `none` when empty.
+///
+/// # Arguments
+///
+/// * `names` - Names to join.
+///
+/// # Returns
+///
+/// The joined text.
+fn join_names(names: &[String]) -> String {
+    if names.is_empty() {
+        "none".to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
+/// Collects the callers of a function.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+/// * `target` - Callee address.
+///
+/// # Returns
+///
+/// The caller names.
+fn callers_of(code: &Disassembly, target: u64) -> Vec<String> {
+    code.functions
+        .values()
+        .filter(|f| f.calls.contains(&target))
+        .map(|f| code.name_of(f.address))
+        .collect()
 }
 
 /// Appends the function heading.
@@ -467,68 +550,26 @@ fn with_function_walkthrough(
 /// The extended section.
 fn append_func_heading(section: Section, code: &Disassembly, func: &Function) -> Section {
     let name = code.name_of(func.address);
-    let title = format!(
-        "{name} at {} ({} instructions)",
-        text::hex(func.address),
-        func.instructions
-    );
+    let count = instructions_label(func.instructions);
+    let title = format!("{name} at {} ({count})", text::hex(func.address));
     section.with(Block::Subheading(title))
 }
 
-/// Appends the complete raw assembler listing for a function.
+/// Formats an instruction count with correct pluralization.
 ///
 /// # Arguments
 ///
-/// * `section` - Section being built.
-/// * `func` - Function whose listing is rendered.
+/// * `count` - Instruction count.
 ///
 /// # Returns
 ///
-/// The extended section.
-fn append_raw_listing(section: Section, func: &Function) -> Section {
-    if func.lines.is_empty() {
-        return section;
-    }
-    let listing = raw_lines(func);
-    section.with(Block::Code(listing.join("\n")))
-}
-
-/// Renders a function's raw listing within the per-function cap.
-///
-/// # Arguments
-///
-/// * `func` - Function whose listing is rendered.
-///
-/// # Returns
-///
-/// The listing lines, with an omission note when capped.
-fn raw_lines(func: &Function) -> Vec<String> {
-    let mut lines: Vec<String> = func.lines.iter().take(RAW_CAP).map(format_line).collect();
-    if func.lines.len() > RAW_CAP {
-        lines.push(format!(
-            "... {} more instructions; see re-<name>.asm",
-            func.lines.len() - RAW_CAP
-        ));
-    }
-    lines
-}
-
-/// Formats one raw assembler line with its address.
-///
-/// # Arguments
-///
-/// * `line` - Decoded instruction line.
-///
-/// # Returns
-///
-/// Text such as `0x1000023a: movs r1, #0x2b`.
-fn format_line(line: &rea_engine::disasm::InstructionLine) -> String {
-    let comment = if line.discussion.is_empty() {
-        String::new()
+/// The label text.
+fn instructions_label(count: usize) -> String {
+    if count == 1 {
+        "1 instruction".to_string()
     } else {
-        format!("  ; {}", line.discussion)
-    };
-    format!("{}: {}{comment}", text::hex(line.address), line.text)
+        format!("{count} instructions")
+    }
 }
 
 /// Appends the plain-language summary of what the function does.
@@ -549,9 +590,32 @@ fn append_func_summary(
     code: &Disassembly,
     func: &Function,
 ) -> Section {
-    let Some(ev) = ev else { return section };
-    let story = narrative::function_story(ev, code, func);
+    let story = match ev {
+        Some(ev) => narrative::function_story(ev, code, func),
+        None => vec![structural_summary(code, func)],
+    };
     section.with(Block::Paragraph(story.join(" ")))
+}
+
+/// Builds a structural summary when no parsed binary is available.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+/// * `func` - Function to summarize.
+///
+/// # Returns
+///
+/// The summary sentence.
+fn structural_summary(code: &Disassembly, func: &Function) -> String {
+    let name = code.name_of(func.address);
+    let (calls, imports, refs) = (func.calls.len(), func.imports.len(), func.references.len());
+    let branches = func.lines.iter().filter(|l| l.kind == "Control Flow").count();
+    format!(
+        "{name} is a {}-instruction routine making {calls} internal and {imports} imported \
+call(s), with {branches} branch(es) and {refs} referenced address(es).",
+        func.instructions
+    )
 }
 
 /// Appends literal pool and data analysis table.
@@ -586,7 +650,7 @@ fn append_data_pools(section: Section, code: &Disassembly, func: &Function) -> S
 fn make_data_pool_blocks(code: &Disassembly, func: &Function) -> (String, rea_report::Table) {
     let name = code.name_of(func.address);
     let title = format!("{name} - Literal Pools & Embedded Data");
-    let rows: Vec<Vec<String>> = func.data_pools.iter().map(data_row).collect();
+    let rows: Vec<Vec<String>> = func.data_pools.iter().take(DATA_POOL_CAP).map(data_row).collect();
     (title, text::table(&DATA_HEADERS, rows))
 }
 
@@ -645,14 +709,11 @@ mod tests {
         assert!(sections(&rea_engine::analyze("x", b"abc")).is_empty());
     }
 
-    /// Verifies that walkthrough renders when disassembly exists.
+    /// Verifies that function analysis renders when disassembly exists.
     #[test]
     fn test_walkthrough_section() {
         let analysis = rea_engine::analyze("x", b"abc");
         let section = walkthrough(&analysis, &Disassembly::default());
-        assert_eq!(
-            section.heading,
-            "Assembly Walkthrough & Instruction Analysis"
-        );
+        assert_eq!(section.heading, "Function Analysis");
     }
 }

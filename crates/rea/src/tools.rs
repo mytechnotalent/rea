@@ -38,6 +38,9 @@ const EMU_BUDGET: u64 = 20_000;
 /// Maximum findings or rows returned by one tool.
 const LIMIT: usize = 40;
 
+/// Maximum instruction lines returned by the `disasm` tool.
+const DISASM_LIMIT: usize = 400;
+
 /// Analysis and bytes available to agent tools.
 pub struct ToolContext<'a> {
     /// Completed engine analysis.
@@ -64,8 +67,9 @@ const DIRECT_TOOLS: [(&str, DirectTool); 6] = [
 ];
 
 /// Tools that consume a text argument.
-const ARG_TOOLS: [(&str, ArgTool); 6] = [
+const ARG_TOOLS: [(&str, ArgTool); 7] = [
     ("decompile", decompile_at),
+    ("disasm", disasm_function),
     ("strings", find_strings),
     ("emulate", emulate_at),
     ("read", read_bytes),
@@ -467,6 +471,126 @@ fn find_function<'a>(analysis: &'a Analysis, target: &str) -> Option<&'a Functio
     let code = analysis.disassembly.as_ref()?;
     let address = parse_address(target);
     code.functions.values().find(|func| matches_function(func, target, address))
+}
+
+/// Disassembles a function with its call graph and referenced strings.
+///
+/// # Arguments
+///
+/// * `ctx` - Tool context.
+/// * `target` - Function name or hex address.
+///
+/// # Returns
+///
+/// The annotated function listing or an error message.
+fn disasm_function(ctx: &ToolContext<'_>, target: &str) -> String {
+    let Some(func) = find_function(ctx.analysis, target) else {
+        return format!("no function matching '{target}'");
+    };
+    let mut out = function_header(func);
+    append_call_graph(&mut out, ctx.analysis, func);
+    append_lines(&mut out, func);
+    out
+}
+
+/// Formats a function header with its name and size.
+///
+/// # Arguments
+///
+/// * `func` - Function to describe.
+///
+/// # Returns
+///
+/// The header line.
+fn function_header(func: &Function) -> String {
+    let name = func.name.as_deref().unwrap_or("?");
+    let imports: Vec<String> = func.imports.iter().cloned().collect();
+    let calls = join_or(&imports, "none");
+    format!(
+        "FUNCTION {name} at {:#x}: {} instructions; imports [{calls}]\n",
+        func.address, func.instructions
+    )
+}
+
+/// Appends the function's callees and callers.
+///
+/// # Arguments
+///
+/// * `out` - Destination buffer.
+/// * `analysis` - Completed analysis.
+/// * `func` - Function to describe.
+fn append_call_graph(out: &mut String, analysis: &Analysis, func: &Function) {
+    let targets: Vec<String> = func.calls.iter().map(|a| labeled(analysis, *a)).collect();
+    let callers = callers_of(analysis, func.address);
+    let _ = writeln!(out, "CALLEES: {}", join_or(&targets, "none"));
+    let _ = writeln!(out, "CALLERS: {}", join_or(&callers, "none"));
+}
+
+/// Appends the annotated instruction lines of a function.
+///
+/// # Arguments
+///
+/// * `out` - Destination buffer.
+/// * `func` - Function to list.
+fn append_lines(out: &mut String, func: &Function) {
+    for line in func.lines.iter().take(DISASM_LIMIT) {
+        let _ = writeln!(
+            out,
+            "  {:#x}: {} ; {}",
+            line.address, line.text, line.discussion
+        );
+    }
+}
+
+/// Resolves a call target to a function name or address.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `address` - Target address.
+///
+/// # Returns
+///
+/// The label text.
+fn labeled(analysis: &Analysis, address: u64) -> String {
+    let named = analysis.disassembly.as_ref().and_then(|c| c.functions.get(&address));
+    named.and_then(|f| f.name.clone()).unwrap_or_else(|| format!("{address:#x}"))
+}
+
+/// Collects the callers of a function.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `target` - Callee address.
+///
+/// # Returns
+///
+/// The caller labels.
+fn callers_of(analysis: &Analysis, target: u64) -> Vec<String> {
+    let Some(code) = &analysis.disassembly else {
+        return Vec::new();
+    };
+    let calls = code.functions.values().filter(|f| f.calls.contains(&target));
+    calls.map(|f| labeled(analysis, f.address)).collect()
+}
+
+/// Joins items or returns a placeholder when empty.
+///
+/// # Arguments
+///
+/// * `items` - Items to join.
+/// * `empty` - Placeholder for the empty case.
+///
+/// # Returns
+///
+/// The joined text.
+fn join_or(items: &[String], empty: &str) -> String {
+    if items.is_empty() {
+        empty.to_string()
+    } else {
+        items.join(", ")
+    }
 }
 
 /// Reports whether a function matches a name or address.

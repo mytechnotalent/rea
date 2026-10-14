@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.3.0
+# Reverse Engineering Assistant (REA) v5.4.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,38 +18,16 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.3.0
+# New in v5.4.0
 
-REA v5.3.0 adds firmware-container awareness and sharpens analysis quality:
+REA v5.4.0 redesigns the report into a nation-state-grade intelligence assessment, authored end to end by the LLM and verified before anything ships.
 
-- **Firmware Container Decoding.** Detects multi-record flash-container headers and reports the entry point, declared size, descriptor records, and the deduced runtime load base in a new report section, so firmware is analyzed at its true address instead of a flat offset map.
-- **Correct Raw-Image Base.** Raw firmware handed to the provider (Binary Ninja) is wrapped at its detected load base, so addresses, cross-references, and symbols resolve at the real runtime address. Override with `REA_LOAD_BASE`.
-- **Faster Analyst Loop.** The autonomous analyst skips duplicate tool calls and stops after repeated no-progress turns, cutting wasted turns and cost.
-- **Stronger Grounding.** The grounding validator now checks quotations against the full extracted-string set, not just the dossier, reducing false positives.
-- **Accurate Instructions.** Fixed register corruption in immediate formatting (`r12` no longer becomes `r0xc`) and corrected branch classification (`beq` is a conditional branch with its condition, not "unconditional"); block stores/loads (`stm`/`ldm`) are described as stack-frame operations.
-
-# New in v5.2.1
-
-REA v5.2.1 is a reliability release that fixes a decompiler hang and hardens the autonomous analyst:
-
-- **Decompiler Hang Fixed.** Copy propagation could map a register to itself (`mov r0, r0`), and the dominator and copy-propagation fixpoints could oscillate on cyclic control flow, hanging `rea decompile` and the one-shot on some ARM Cortex-M targets. Self/cyclic mappings are now rejected and both fixpoints are iteration-bounded.
-- **Bounded Analyst Loop.** The agent loop now enforces a wall-clock budget (default 420s, `REA_AGENT_BUDGET_SECS`), forces a final report when the budget expires (`tool_choice: none`), caps each observation, and applies a per-request network timeout so a one-shot always terminates with a report.
-- **Live Progress.** The analyst prints per-turn and per-tool progress so long investigations are visible.
-
-# New in v5.2.0
-
-REA v5.2.0 rebuilds the autonomous analyst into a true tool-calling author, so the AI actually investigates the target instead of summarizing a static dossier:
-
-- **Native Tool Calling.** The analyst uses OpenRouter function/tool calling (JSON schemas) instead of a brittle text protocol, eliminating mis-parsed actions and hallucinated free-writing.
-- **90-Turn Investigation.** The agent loop runs up to 90 tool turns (up from 4), so it decompiles, emulates, and reads its way to an answer.
-- **The LLM Authors the Report.** The model is the report's author; deterministic engine sections feed it as evidence, and the authored assessment leads the report.
-- **Grounding Validator.** Every quoted string in the final report is checked against the evidence dossier and all tool observations; unverified quotations are flagged rather than shipped as fact.
-- **Capable Default Model.** Defaults to `deepseek/deepseek-v4.1-flash`; override with `OPENROUTER_MODEL`.
-- **Stronger Engine Tools.** The loop gains entropy `regions` segmentation and 8051 (`MCS-51`) disassembly. Every tool is pure-Rust and works one-shot with no external tools, servers, or licenses required.
-
-Retained from v5.1.0: DWARF/PDB symbols, YARA-subset matching, JVM `.class`, Android `resources.arsc`, source-map VLQ, WASM code bodies, crypto expansion, artifact report sections, and the 31-tool MCP server.
-
-<br>
+- **Report authored by the analyst.** The report now leads with the AI narrative: BLUF, Target Identification & Provenance, Capability Assessment (with confidence), Behavioral Analysis, Function Analysis, Network/C2/IOCs, Secrets & Cryptography, Vulnerabilities, Anti-Analysis, Attribution, and Confidence & Limitations. The deterministic engine findings move to an **Evidence Appendix**.
+- **Verification (always on).** Every cited address and quoted string must exist in the engine evidence; proven reports carry a `[Verification]` banner and unproven citations are flagged.
+- **Adversarial review + adjudication (`REA_VERIFY=1`).** Independent reviewers attempt to falsify each claim against the evidence, and an adjudicator rewrites the report to remove anything unsupported. Tune with `REA_REVIEWERS`.
+- **Decompiler accuracy.** Fixed ARM memory-operand handling: `ldrb r3,[r3,#0]` decompiles to `r3 = *(r3)` (not `r3 = [r3`), `str` correctly orders memory as the destination, and `.w`/`.n` width-suffixed instructions lift.
+- **Presentation.** The Function Analysis section summarizes each ranked function in plain English with its call graph; raw instruction streams live in the `.asm` artifact.
+- **MCP parity.** The MCP server adds `disasm_function` and `classify_regions` (33 tools), and `generate_dossier` produces the same redesigned report.
 
 # Features
 

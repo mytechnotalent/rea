@@ -105,6 +105,11 @@ const SECTIONS: [fn(&Analysis) -> Vec<Section>; 12] = [
     method::sections,
 ];
 
+/// Note placed above the deterministic evidence appendix.
+const APPENDIX_NOTE: &str = "Deterministic engine findings supporting the assessment above: \
+identity, structure, imports, strings, code inventory, capabilities, vulnerabilities, and \
+artifacts. This is raw evidence, not analysis.";
+
 /// Extracts the content of a bullet or numbered list line.
 ///
 /// # Arguments
@@ -361,6 +366,9 @@ fn assessment_section(text: &str) -> Section {
 
 /// Composes the complete report for one analysis.
 ///
+/// When an AI assessment is present, the report is authored by the analyst and
+/// the deterministic findings become an evidence appendix.
+///
 /// # Arguments
 ///
 /// * `analysis` - Completed analysis.
@@ -374,29 +382,58 @@ fn assessment_section(text: &str) -> Section {
 pub fn build(analysis: &Analysis, bytes: &[u8], assessment: Option<&str>) -> Document {
     let title = format!("Reverse Engineering Report: {}", analysis.name);
     let mut document = Document::new(&title, &subtitle(analysis));
-    document.sections = SECTIONS.iter().flat_map(|b| b(analysis)).collect();
-    document.sections.extend(rules::sections(analysis, bytes));
-    document.sections.extend(crypto::sections(bytes));
-    document.sections.extend(artifacts::sections(analysis, bytes));
-    document.sections.extend(container::sections(bytes));
-    with_assessment(document, assessment)
+    document.sections = assemble(analysis, bytes, assessment);
+    document
 }
 
-/// Inserts the AI assessment section when present.
+/// Assembles the report body: authored narrative then evidence appendix.
 ///
 /// # Arguments
 ///
-/// * `document` - Report document.
+/// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
 /// * `assessment` - AI analyst narrative, when available.
 ///
 /// # Returns
 ///
-/// The document.
-fn with_assessment(mut document: Document, assessment: Option<&str>) -> Document {
+/// The ordered report sections.
+fn assemble(analysis: &Analysis, bytes: &[u8], assessment: Option<&str>) -> Vec<Section> {
+    let mut sections = Vec::new();
     if let Some(text) = assessment {
-        document.sections.insert(1, assessment_section(text));
+        sections.push(assessment_section(text));
+        sections.push(appendix_heading());
     }
-    document
+    sections.extend(evidence(analysis, bytes));
+    sections
+}
+
+/// Builds the deterministic evidence sections.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// The evidence sections.
+fn evidence(analysis: &Analysis, bytes: &[u8]) -> Vec<Section> {
+    let mut sections: Vec<Section> = SECTIONS.iter().flat_map(|b| b(analysis)).collect();
+    sections.extend(rules::sections(analysis, bytes));
+    sections.extend(crypto::sections(bytes));
+    sections.extend(artifacts::sections(analysis, bytes));
+    sections.extend(container::sections(bytes));
+    sections
+}
+
+/// Builds the evidence appendix heading.
+///
+/// # Returns
+///
+/// The heading section.
+fn appendix_heading() -> Section {
+    let note = text::paragraph(APPENDIX_NOTE);
+    Section::new("Evidence Appendix").with(note)
 }
 
 /// Describes the target on the cover.
@@ -418,6 +455,16 @@ fn subtitle(analysis: &Analysis) -> String {
 mod tests {
     // Import all parent module items
     use super::*;
+
+    /// Verifies that an AI assessment leads the report and the evidence follows.
+    #[test]
+    fn test_assessment_leads_report() {
+        let analysis = rea_engine::analyze("blob.bin", b"plain text");
+        let doc = build(&analysis, &[], Some("## BLUF\n\nThe target is a blob."));
+        let first = doc.sections.first().map(|s| s.heading.clone());
+        assert_eq!(first.as_deref(), Some("Autonomous Security Assessment"));
+        assert!(doc.sections.iter().any(|s| s.heading == "Evidence Appendix"));
+    }
 
     /// Verifies that unknown data still yields a complete report.
     #[test]

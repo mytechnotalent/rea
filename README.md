@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.5.0
+# Reverse Engineering Assistant (REA) v5.6.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,14 +18,15 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.5.0
+# New in v5.6.0
 
-REA v5.5.0 lets the one-shot analyst run on OpenRouter (default) or OpenCode Go:
+REA v5.6.0 adds differential analysis and makes coverage explicit:
 
-- **OpenRouter by default (and free).** With an `OPENROUTER_API_KEY`, REA runs on `deepseek/deepseek-v4.1-flash` and falls back to `openrouter/free`. OpenRouter offers free models, so you can run at no cost.
-- **Better quality with OpenCode Go.** For a higher-quality engine, subscribe to OpenCode Go, then set `REA_PROVIDER=opencode-go` and `REA_API_KEY`. The default model is `deepseek-v4.1-flash` with a `longcat-2.5-preview-free` fallback. Copy your API key from the OpenCode Console at <https://opencode.ai/console>.
-- **Any OpenAI-compatible provider.** `REA_API_BASE`, `REA_API_KEY`, and `REA_MODEL` point REA at any `/chat/completions` endpoint.
-- **Unchanged guarantee.** No unverified claim ships: the analyst must prove each citation or it is removed (prove-or-remove, then redact).
+- **Differential comparison.** `rea diff <a> <b>` (and the MCP `compare_binaries` tool) compares two targets and reports added/removed imports, strings, capabilities, rules, and crypto constants, plus size, entropy, and function/instruction deltas. It writes `re-<a>-vs-<b>.md`.
+- **Coverage & Limitations.** Every report now states what was analyzed (functions, instructions, strings) and what was not (truncated disassembly, encrypted or compressed regions, missing headers), so conclusions are scoped to real coverage.
+- **Coverage in JSON.** The machine-readable report adds a `coverage` object: functions, instructions, strings, `truncated`, and `opaque_bytes`.
+- **Provenance marking (MCP).** Tool results that can carry target-derived text are marked `_meta.provenance.untrusted_content`; agents are told to treat that content as data, never as instructions.
+- **34 MCP tools.**
 
 # Features
 

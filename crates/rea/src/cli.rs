@@ -52,6 +52,7 @@ usage:
   rea info <file>             inspect file headers, hashes, mitigations, and sections
   rea strings <file>          extract printable strings and security indicators
   rea decompile <file> [sym]  decompile target or function into pseudo-C
+  rea diff <a> <b>            differentially compare two targets
   rea xrefs <file> <addr>     query cross-references to address or symbol
   rea analyze <file>          alias for one-shot analysis
 
@@ -320,7 +321,24 @@ fn dispatch_inspect6(cmd: &str, rest: &[String]) -> Option<ExitCode> {
 fn dispatch_inspect7(cmd: &str, rest: &[String]) -> Option<ExitCode> {
     match cmd {
         "provider" => Some(dispatch_provider(rest)),
+        "diff" => Some(dispatch_diff(rest)),
         _ => None,
+    }
+}
+
+/// Dispatches the differential comparison subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_diff(rest: &[String]) -> ExitCode {
+    match rest {
+        [a, b] => crate::inspect::diff_cmd(Path::new(a), Path::new(b)),
+        _ => usage_error(),
     }
 }
 

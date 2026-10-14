@@ -89,6 +89,9 @@ mod artifacts;
 /// Firmware container findings.
 mod container;
 
+/// Coverage and limitations.
+mod coverage;
+
 /// Report section builders, in reading order.
 const SECTIONS: [fn(&Analysis) -> Vec<Section>; 12] = [
     summary::sections,
@@ -423,6 +426,7 @@ fn evidence(analysis: &Analysis, bytes: &[u8]) -> Vec<Section> {
     sections.extend(crypto::sections(bytes));
     sections.extend(artifacts::sections(analysis, bytes));
     sections.extend(container::sections(bytes));
+    sections.extend(coverage::sections(analysis, bytes));
     sections
 }
 

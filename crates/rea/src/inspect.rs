@@ -27,10 +27,14 @@
 //! SOFTWARE.
 
 // Import dependencies from std
-use std::{fs, path::Path, process::ExitCode};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 // Import dependencies from rea_engine
-use rea_engine::{analyze_path, decompile, disasm::Function, Analysis};
+use rea_engine::{analyze_path, compare, decompile, disasm::Function, Analysis};
 
 /// Most instructions printed by a single listing command.
 const MAX_LISTING: usize = 4_000_000;
@@ -1213,6 +1217,86 @@ pub fn regions_cmd(path: &Path) -> ExitCode {
     let regions = rea_engine::regions::segment(&bytes);
     print!("{}", rea_engine::regions::format_regions(&regions));
     ExitCode::SUCCESS
+}
+
+/// Differentially compares two targets and writes a delta report.
+///
+/// # Arguments
+///
+/// * `a` - First target path.
+/// * `b` - Second target path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn diff_cmd(a: &Path, b: &Path) -> ExitCode {
+    let (Some((first, a_bytes)), Some((second, b_bytes))) = (load(a), load(b)) else {
+        eprintln!("rea diff: failed to analyze one or both targets");
+        return ExitCode::FAILURE;
+    };
+    let text = compare::format(&compare::compare(&first, &second, &a_bytes, &b_bytes));
+    print!("{text}");
+    write_diff(a, b, &text);
+    ExitCode::SUCCESS
+}
+
+/// Reads and analyzes a target.
+///
+/// # Arguments
+///
+/// * `path` - Target path.
+///
+/// # Returns
+///
+/// The analysis and raw bytes, or `None`.
+fn load(path: &Path) -> Option<(Analysis, Vec<u8>)> {
+    let bytes = fs::read(path).ok()?;
+    let analysis = analyze_path(path).ok()?;
+    Some((analysis, bytes))
+}
+
+/// Writes the differential report beside the first target.
+///
+/// # Arguments
+///
+/// * `a` - First target path.
+/// * `b` - Second target path.
+/// * `text` - Report text.
+fn write_diff(a: &Path, b: &Path, text: &str) {
+    let path = diff_path(a, b);
+    let _ = fs::write(path, text);
+}
+
+/// Builds the differential report path.
+///
+/// # Arguments
+///
+/// * `a` - First target path.
+/// * `b` - Second target path.
+///
+/// # Returns
+///
+/// The report path.
+fn diff_path(a: &Path, b: &Path) -> PathBuf {
+    let dir = a.parent().unwrap_or_else(|| Path::new(""));
+    dir.join(format!("re-{}-vs-{}.md", stem_of(a), stem_of(b)))
+}
+
+/// Returns a path's file stem or a placeholder.
+///
+/// # Arguments
+///
+/// * `path` - Target path.
+///
+/// # Returns
+///
+/// The stem.
+fn stem_of(path: &Path) -> String {
+    path.file_stem().map_or_else(
+        || "target".to_string(),
+        |s| s.to_string_lossy().into_owned(),
+    )
 }
 
 /// Disassembles an 8051 (MCS-51) firmware region.

@@ -200,7 +200,19 @@ fn tool_catalog() -> Value {
     all.extend(runtime_tools().as_array().cloned().unwrap_or_default());
     all.extend(analysis_tools().as_array().cloned().unwrap_or_default());
     all.extend(format_tools().as_array().cloned().unwrap_or_default());
+    all.extend(diff_tools().as_array().cloned().unwrap_or_default());
     Value::Array(all)
+}
+
+/// Returns differential-comparison tools.
+///
+/// # Returns
+///
+/// JSON array of comparison tool declarations.
+fn diff_tools() -> Value {
+    json!([
+        {"name": "compare_binaries", "description": "Differentially compares two targets: added and removed imports, strings, capabilities, rules, and crypto constants.", "inputSchema": {"type": "object", "properties": {"path_a": {"type": "string"}, "path_b": {"type": "string"}}, "required": ["path_a", "path_b"]}}
+    ])
 }
 
 /// Returns format-specific inspection tools.
@@ -231,9 +243,25 @@ fn tool_reply(id: &Value, text: &str) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
-        "result": {
-            "content": [{"type": "text", "text": text}]
-        }
+        "result": tool_result(text)
+    })
+}
+
+/// Wraps tool text into a result block marked with provenance.
+///
+/// Tool output can carry target-derived text, so it is marked untrusted.
+///
+/// # Arguments
+///
+/// * `text` - Tool output text content.
+///
+/// # Returns
+///
+/// The result object.
+fn tool_result(text: &str) -> Value {
+    json!({
+        "content": [{"type": "text", "text": text}],
+        "_meta": {"provenance": {"untrusted_content": true, "source": "analysis_target"}}
     })
 }
 
@@ -315,7 +343,89 @@ fn dispatch_tool(s: &mut ServerSession, name: &str, args: &Value) -> String {
         .or_else(|| dispatch_runtime_tool(s, name))
         .or_else(|| dispatch_analysis_tool(s, name, args))
         .or_else(|| dispatch_format_tool(s, name))
+        .or_else(|| dispatch_diff_tool(name, args))
         .unwrap_or_else(|| dispatch_adv_tool(s, name, args))
+}
+
+/// Dispatches differential-comparison tools.
+///
+/// # Arguments
+///
+/// * `name` - Tool name.
+/// * `args` - Tool argument object.
+///
+/// # Returns
+///
+/// Result string if matched, otherwise `None`.
+fn dispatch_diff_tool(name: &str, args: &Value) -> Option<String> {
+    match name {
+        "compare_binaries" => Some(call_compare(args)),
+        _ => None,
+    }
+}
+
+/// Compares two targets named in the arguments.
+///
+/// # Arguments
+///
+/// * `args` - Tool argument object.
+///
+/// # Returns
+///
+/// The differential report text.
+fn call_compare(args: &Value) -> String {
+    let (Some(a), Some(b)) = (str_arg(args, "path_a"), str_arg(args, "path_b")) else {
+        return "Missing 'path_a' or 'path_b' argument".to_string();
+    };
+    match load_side(a).zip(load_side(b)) {
+        Some(((first, ab), (second, bb))) => compare_text(&first, &second, &ab, &bb),
+        None => "Failed to analyze one or both targets".to_string(),
+    }
+}
+
+/// Reads and analyzes a target path.
+///
+/// # Arguments
+///
+/// * `path` - Target path string.
+///
+/// # Returns
+///
+/// The analysis and raw bytes, or `None`.
+fn load_side(path: &str) -> Option<(Analysis, Vec<u8>)> {
+    let bytes = std::fs::read(path).ok()?;
+    let analysis = analyze_path(Path::new(path)).ok()?;
+    Some((analysis, bytes))
+}
+
+/// Formats a comparison of two analyses.
+///
+/// # Arguments
+///
+/// * `a` - First analysis.
+/// * `b` - Second analysis.
+/// * `ab` - First target bytes.
+/// * `bb` - Second target bytes.
+///
+/// # Returns
+///
+/// The report text.
+fn compare_text(a: &Analysis, b: &Analysis, ab: &[u8], bb: &[u8]) -> String {
+    rea_engine::compare::format(&rea_engine::compare::compare(a, b, ab, bb))
+}
+
+/// Reads a string argument.
+///
+/// # Arguments
+///
+/// * `args` - Argument object.
+/// * `key` - Field name.
+///
+/// # Returns
+///
+/// The value, or `None`.
+fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args.get(key).and_then(Value::as_str)
 }
 
 /// Dispatches format-specific inspection tools.
@@ -1394,7 +1504,7 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 33);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 34);
     }
 
     /// Verifies runtime tool handlers reject empty sessions.

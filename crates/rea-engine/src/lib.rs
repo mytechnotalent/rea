@@ -40,6 +40,9 @@ pub mod capabilities;
 /// .NET CIL method-body disassembly.
 pub mod cil;
 
+/// Differential comparison between two targets.
+pub mod compare;
+
 /// Firmware container header decoding.
 pub mod container;
 

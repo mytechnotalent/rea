@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v5.5.0
+**Current release:** v5.6.0
 **Document owner:** Kevin Thomas
 
 ---
@@ -50,6 +50,7 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.4.0 | Nation-state report redesign: LLM authors the full intelligence assessment (BLUF, capability/behavior/function analysis, attribution), deterministic findings become an Evidence Appendix, always-on citation verification plus adversarial reviewers and an adjudicator (`REA_VERIFY`). |
 | v5.4.1 | Reliable model failover (`deepseek/deepseek-v4.1-flash` -> `openrouter/free`), case-insensitive citation verification, and documented analyst env knobs. |
 | v5.5.0 | Provider-selectable one-shot: run the analyst on OpenCode Go (`REA_PROVIDER=opencode-go`, default `deepseek-v4.1-flash`) or OpenRouter, via configurable `REA_API_BASE`/`REA_API_KEY`/`REA_MODEL`. |
+| v5.6.0 | Differential comparison (`rea diff`, MCP `compare_binaries`), Coverage & Limitations report section and JSON `coverage` block, and untrusted-content provenance marking in MCP results. |
 
 ---
 

@@ -27,7 +27,11 @@
 //! SOFTWARE.
 
 // Import dependencies from rea_engine
-use rea_engine::{crypto, rules, vulns, Analysis};
+use rea_engine::{
+    crypto,
+    regions::{self, RegionKind},
+    rules, vulns, Analysis,
+};
 
 // Import dependencies from serde_json
 use serde_json::{json, Map, Value};
@@ -48,6 +52,7 @@ pub fn report(analysis: &Analysis, bytes: &[u8]) -> String {
     identity(&mut map, analysis);
     structure(&mut map, analysis);
     findings(&mut map, analysis, bytes);
+    coverage(&mut map, analysis, bytes);
     serde_json::to_string_pretty(&Value::Object(map)).unwrap_or_default()
 }
 
@@ -60,6 +65,90 @@ pub fn report(analysis: &Analysis, bytes: &[u8]) -> String {
 /// * `value` - Field value.
 fn put(map: &mut Map<String, Value>, key: &str, value: Value) {
     map.insert(key.to_string(), value);
+}
+
+/// Inserts a coverage object describing analysis completeness.
+///
+/// # Arguments
+///
+/// * `map` - Report object.
+/// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
+fn coverage(map: &mut Map<String, Value>, analysis: &Analysis, bytes: &[u8]) {
+    put(map, "coverage", coverage_value(analysis, bytes));
+}
+
+/// Builds the coverage object.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// The coverage value.
+fn coverage_value(analysis: &Analysis, bytes: &[u8]) -> Value {
+    json!({
+        "functions": count_functions(analysis),
+        "instructions": count_instructions(analysis),
+        "strings": analysis.strings.len(),
+        "truncated": truncated(analysis),
+        "opaque_bytes": opaque_bytes(bytes),
+    })
+}
+
+/// Counts recovered functions.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+///
+/// # Returns
+///
+/// The function count.
+fn count_functions(analysis: &Analysis) -> usize {
+    analysis.disassembly.as_ref().map_or(0, |d| d.functions.len())
+}
+
+/// Counts recovered instructions.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+///
+/// # Returns
+///
+/// The instruction count.
+fn count_instructions(analysis: &Analysis) -> usize {
+    analysis.disassembly.as_ref().map_or(0, |d| d.instructions)
+}
+
+/// Reports whether disassembly stopped early.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+///
+/// # Returns
+///
+/// `true` when truncated.
+fn truncated(analysis: &Analysis) -> bool {
+    analysis.disassembly.as_ref().is_some_and(|d| d.truncated)
+}
+
+/// Sums encrypted and compressed region bytes.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// The opaque byte count.
+fn opaque_bytes(bytes: &[u8]) -> usize {
+    let opaque = |kind: RegionKind| matches!(kind, RegionKind::Encrypted | RegionKind::Compressed);
+    regions::segment(bytes).iter().filter(|r| opaque(r.kind)).map(|r| r.size).sum()
 }
 
 /// Inserts identity and fingerprint fields.
@@ -197,5 +286,6 @@ mod tests {
         let analysis = rea_engine::analyze("blob.bin", b"plain data");
         let text = report(&analysis, b"plain data");
         assert!(text.contains("\"name\": \"blob.bin\""));
+        assert!(text.contains("\"coverage\""));
     }
 }

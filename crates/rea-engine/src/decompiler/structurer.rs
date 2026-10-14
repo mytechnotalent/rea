@@ -263,7 +263,12 @@ fn succ_indices(block: &Block, graph: &Graph) -> Vec<usize> {
 /// One dominator set per block index.
 fn dominators(preds: &[Vec<usize>]) -> Vec<BTreeSet<usize>> {
     let mut dom = initial(preds.len());
-    while sweep(preds, &mut dom) {}
+    let budget = preds.len() + 1;
+    for _ in 0..budget {
+        if !sweep(preds, &mut dom) {
+            break;
+        }
+    }
     dom
 }
 
@@ -884,5 +889,12 @@ mod tests {
         let structure = analyze(&build(&lines), &lines);
         assert_eq!(structure.diamonds.len(), 1);
         assert!(structure.consumed.contains(&1) && structure.consumed.contains(&2));
+    }
+
+    /// Verifies dominators terminate on a mutually recursive block pair.
+    #[test]
+    fn test_dominators_terminate_on_cycle() {
+        let preds = vec![vec![1], vec![0]];
+        assert_eq!(dominators(&preds).len(), 2);
     }
 }

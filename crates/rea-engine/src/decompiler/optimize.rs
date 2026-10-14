@@ -189,7 +189,12 @@ fn is_terminator(inst: &Inst) -> bool {
 /// The per-block entry state, keyed by block start address.
 fn block_states(lines: &[Line], graph: &Graph) -> BTreeMap<u64, BTreeMap<String, String>> {
     let mut outs = initial_outs(graph);
-    while propagate(lines, graph, &mut outs) {}
+    let budget = graph.blocks.len() + 1;
+    for _ in 0..budget {
+        if !propagate(lines, graph, &mut outs) {
+            break;
+        }
+    }
     graph.blocks.iter().map(|b| (b.start, meet(graph, &outs, b))).collect()
 }
 
@@ -432,8 +437,11 @@ fn subst(expr: &Expr, map: &BTreeMap<String, String>) -> Expr {
 /// The ultimate source register.
 fn resolve(map: &BTreeMap<String, String>, name: &str) -> String {
     let mut current = name.to_string();
-    while let Some(next) = map.get(&current) {
-        current = next.clone();
+    for _ in 0..map.len() {
+        match map.get(&current) {
+            Some(next) if next != &current => current = next.clone(),
+            _ => break,
+        }
     }
     current
 }
@@ -460,11 +468,27 @@ fn update_map(inst: &Inst, map: &mut BTreeMap<String, String>) {
 /// * `src` - Source expression.
 /// * `map` - Copy-propagation state.
 fn record(name: &str, src: &Expr, map: &mut BTreeMap<String, String>) {
-    if let Expr::Reg(source) = src {
-        let resolved = resolve(map, source);
-        map.insert(name.to_string(), resolved);
-    } else {
+    match src {
+        Expr::Reg(source) => record_reg(name, source, map),
+        _ => {
+            map.remove(name);
+        }
+    }
+}
+
+/// Records a register-to-register copy, avoiding self or cyclic mappings.
+///
+/// # Arguments
+///
+/// * `name` - Defined register.
+/// * `source` - Source register.
+/// * `map` - Copy-propagation state.
+fn record_reg(name: &str, source: &str, map: &mut BTreeMap<String, String>) {
+    let resolved = resolve(map, source);
+    if resolved == name {
         map.remove(name);
+    } else {
+        map.insert(name.to_string(), resolved);
     }
 }
 
@@ -801,5 +825,22 @@ mod tests {
         let optimized = run(&lines, Arch::X86_64, &graph);
         let expected = Inst::Assign { dst: Expr::Reg("rax".into()), src: Expr::Reg("rcx".into()) };
         assert_eq!(optimized[1].inst, expected);
+    }
+
+    /// Verifies a self-move does not create a cyclic copy mapping.
+    #[test]
+    fn test_self_move_does_not_cycle() {
+        let mut map = BTreeMap::new();
+        record("r0", &Expr::Reg("r0".into()), &mut map);
+        assert_eq!(resolve(&map, "r0"), "r0");
+    }
+
+    /// Verifies a two-register cycle cannot make resolution spin.
+    #[test]
+    fn test_cyclic_copy_resolves() {
+        let mut map = BTreeMap::new();
+        map.insert("r0".to_string(), "r1".to_string());
+        map.insert("r1".to_string(), "r0".to_string());
+        assert!(!resolve(&map, "r0").is_empty());
     }
 }

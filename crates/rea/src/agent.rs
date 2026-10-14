@@ -27,7 +27,10 @@
 //! SOFTWARE.
 
 // Import dependencies from std
-use std::fmt::Write;
+use std::{
+    fmt::Write,
+    time::{Duration, Instant},
+};
 
 // Import dependencies from rea_engine
 use rea_engine::{Analysis, FirmwareTriage};
@@ -98,6 +101,22 @@ const GROUNDING_MIN: usize = 6;
 
 /// Maximum unverified quotations listed in the grounding note.
 const GROUNDING_LIMIT: usize = 8;
+
+/// Wall-clock budget for the analyst loop before forcing a final answer.
+const AI_BUDGET: Duration = Duration::from_secs(420);
+
+/// Per-request network timeout for `OpenRouter` calls.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// `OpenRouter` chat completions endpoint.
+const ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
+
+/// Maximum characters of one tool observation fed back into the conversation.
+const OBS_LIMIT: usize = 4000;
+
+/// Instruction that forces the model to stop investigating and write the report.
+const FINAL_NUDGE: &str = "Stop investigating now and write the complete final report using the \
+evidence gathered so far. Do not call any more tools.";
 
 /// Reads the API key from environment variables.
 ///
@@ -246,12 +265,36 @@ fn tool_params() -> serde_json::Value {
 ///
 /// Returns [`ureq::Error`] on network or deserialization failure.
 fn send_request(key: &str, body: &serde_json::Value) -> Result<serde_json::Value, ureq::Error> {
-    let mut res = ureq::post("https://openrouter.ai/api/v1/chat/completions")
+    let mut res = post_json(key, body)?;
+    res.body_mut().read_json()
+}
+
+/// Sends a JSON POST to `OpenRouter` with a bounded timeout.
+///
+/// # Arguments
+///
+/// * `key` - Bearer API key.
+/// * `body` - Request JSON.
+///
+/// # Returns
+///
+/// The HTTP response.
+///
+/// # Errors
+///
+/// Returns [`ureq::Error`] on network failure.
+fn post_json(
+    key: &str,
+    body: &serde_json::Value,
+) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+    ureq::post(ENDPOINT)
+        .config()
+        .timeout_global(Some(REQUEST_TIMEOUT))
+        .build()
         .header("Authorization", &format!("Bearer {key}"))
         .header("HTTP-Referer", "https://github.com/mytechnotalent/rea")
         .header("X-Title", "Reverse Engineering Assistant")
-        .send_json(body)?;
-    res.body_mut().read_json()
+        .send_json(body)
 }
 
 /// Extracts the assistant message from a chat completion response.
@@ -625,6 +668,75 @@ impl Session {
         None
     }
 
+    /// Runs the loop until a report is produced, the budget expires, or turns run out.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `model` - Model identifier.
+    /// * `ctx` - Tool context.
+    /// * `deadline` - Wall-clock budget deadline.
+    ///
+    /// # Returns
+    ///
+    /// The final report, or `None` when the budget or turn limit is reached.
+    fn run(
+        &mut self,
+        key: &str,
+        model: &str,
+        ctx: &ToolContext<'_>,
+        deadline: Instant,
+    ) -> Option<String> {
+        let mut turn = 0;
+        while !expired(deadline) && turn < MAX_TURNS {
+            turn += 1;
+            if let Some(text) = self.turn(turn, key, model, ctx) {
+                return Some(text);
+            }
+        }
+        None
+    }
+
+    /// Runs one chat turn and folds its result into the session.
+    ///
+    /// # Arguments
+    ///
+    /// * `turn` - One-based turn number.
+    /// * `key` - API key.
+    /// * `model` - Model identifier.
+    /// * `ctx` - Tool context.
+    ///
+    /// # Returns
+    ///
+    /// The final report when the model stops calling tools.
+    fn turn(
+        &mut self,
+        turn: usize,
+        key: &str,
+        model: &str,
+        ctx: &ToolContext<'_>,
+    ) -> Option<String> {
+        eprintln!("rea: agent turn {turn}");
+        let message = chat(key, model, &self.messages)?;
+        self.finish(&message, ctx)
+    }
+
+    /// Forces a final report after the loop stops without one.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `model` - Model identifier.
+    ///
+    /// # Returns
+    ///
+    /// The grounded report, or `None`.
+    fn finalize(&mut self, key: &str, model: &str) -> Option<String> {
+        push_user(&mut self.messages, FINAL_NUDGE);
+        let message = chat_none(key, model, &self.messages)?;
+        final_report(&message, &self.seen)
+    }
+
     /// Executes tool calls, folding observations into the corpus.
     ///
     /// # Arguments
@@ -634,11 +746,67 @@ impl Session {
     fn run_calls(&mut self, calls: &[serde_json::Value], ctx: &ToolContext<'_>) {
         for call in calls {
             let (id, name, arg) = parse_call(call);
+            eprintln!("rea: tool {name} {arg}");
             let observation = tools::run(ctx, &name, &arg);
             self.seen.push_str(&observation);
-            append_tool(&mut self.messages, &id, &observation);
+            append_tool(&mut self.messages, &id, &clip(&observation));
         }
     }
+}
+
+/// Reports whether a wall-clock deadline has passed.
+///
+/// # Arguments
+///
+/// * `deadline` - Wall-clock deadline.
+///
+/// # Returns
+///
+/// `true` when the deadline has passed.
+fn expired(deadline: Instant) -> bool {
+    Instant::now() >= deadline
+}
+
+/// Truncates a tool observation to [`OBS_LIMIT`] characters.
+///
+/// # Arguments
+///
+/// * `text` - Observation text.
+///
+/// # Returns
+///
+/// The bounded text.
+fn clip(text: &str) -> String {
+    text.chars().take(OBS_LIMIT).collect()
+}
+
+/// Appends a user message to the conversation.
+///
+/// # Arguments
+///
+/// * `messages` - Conversation message array.
+/// * `content` - User message text.
+fn push_user(messages: &mut serde_json::Value, content: &str) {
+    if let Some(array) = messages.as_array_mut() {
+        array.push(json!({"role": "user", "content": content}));
+    }
+}
+
+/// Executes a chat turn that forbids further tool calls.
+///
+/// # Arguments
+///
+/// * `key` - API key.
+/// * `model` - Model identifier.
+/// * `messages` - Conversation message array.
+///
+/// # Returns
+///
+/// The assistant message object.
+fn chat_none(key: &str, model: &str, messages: &serde_json::Value) -> Option<serde_json::Value> {
+    let mut body = build_payload(model, messages);
+    body["tool_choice"] = json!("none");
+    send_request(key, &body).ok().and_then(|val| extract_message(&val))
 }
 
 /// Produces the final grounded report from an assistant message.
@@ -731,13 +899,19 @@ fn quotes(text: &str) -> Vec<String> {
 /// The final report, or `None`.
 fn run_loop(key: &str, model: &str, ctx: &ToolContext<'_>, evidence: &str) -> Option<String> {
     let mut session = Session::new(evidence);
-    for _ in 0..MAX_TURNS {
-        let message = chat(key, model, &session.messages)?;
-        if let Some(text) = session.finish(&message, ctx) {
-            return Some(text);
-        }
-    }
-    None
+    let deadline = Instant::now() + ai_budget();
+    let draft = session.run(key, model, ctx, deadline);
+    draft.or_else(|| session.finalize(key, model))
+}
+
+/// Resolves the analyst wall-clock budget from `REA_AGENT_BUDGET_SECS`.
+///
+/// # Returns
+///
+/// The configured budget, defaulting to [`AI_BUDGET`].
+fn ai_budget() -> Duration {
+    let secs = std::env::var("REA_AGENT_BUDGET_SECS").ok().and_then(|s| s.parse().ok());
+    Duration::from_secs(secs.unwrap_or(AI_BUDGET.as_secs()))
 }
 
 /// Runs the autonomous tool-calling analyst loop when configured.

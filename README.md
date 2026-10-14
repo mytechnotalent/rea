@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.2.0
+# Reverse Engineering Assistant (REA) v5.2.1
 
 Autonomous Reverse Engineering Framework
 
@@ -17,6 +17,14 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 **Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and deterministic engine. Built in 100% pure Rust.
 
 <br>
+
+# New in v5.2.1
+
+REA v5.2.1 is a reliability release that fixes a decompiler hang and hardens the autonomous analyst:
+
+- **Decompiler Hang Fixed.** Copy propagation could map a register to itself (`mov r0, r0`), and the dominator and copy-propagation fixpoints could oscillate on cyclic control flow, hanging `rea decompile` and the one-shot on some ARM Cortex-M targets. Self/cyclic mappings are now rejected and both fixpoints are iteration-bounded.
+- **Bounded Analyst Loop.** The agent loop now enforces a wall-clock budget (default 420s, `REA_AGENT_BUDGET_SECS`), forces a final report when the budget expires (`tool_choice: none`), caps each observation, and applies a per-request network timeout so a one-shot always terminates with a report.
+- **Live Progress.** The analyst prints per-turn and per-tool progress so long investigations are visible.
 
 # New in v5.2.0
 

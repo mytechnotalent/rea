@@ -28,6 +28,7 @@
 
 // Import dependencies from std
 use std::{
+    collections::BTreeSet,
     fmt::Write,
     time::{Duration, Instant},
 };
@@ -117,6 +118,12 @@ const OBS_LIMIT: usize = 4000;
 /// Instruction that forces the model to stop investigating and write the report.
 const FINAL_NUDGE: &str = "Stop investigating now and write the complete final report using the \
 evidence gathered so far. Do not call any more tools.";
+
+/// Consecutive no-progress turns before the loop stops investigating.
+const STALE_LIMIT: usize = 3;
+
+/// Observation returned in place of a repeated tool call.
+const DUPLICATE_NOTE: &str = "Duplicate call skipped; this evidence was already gathered.";
 
 /// Reads the API key from environment variables.
 ///
@@ -632,6 +639,12 @@ struct Session {
 
     /// Evidence corpus for grounding.
     seen: String,
+
+    /// Signatures of tool calls already executed.
+    called: BTreeSet<String>,
+
+    /// Consecutive turns that produced no new tool call.
+    stale: usize,
 }
 
 impl Session {
@@ -640,12 +653,14 @@ impl Session {
     /// # Arguments
     ///
     /// * `evidence` - Evidence dossier text.
+    /// * `corpus` - Evidence plus full string set for grounding.
     ///
     /// # Returns
     ///
     /// A new session.
-    fn new(evidence: &str) -> Self {
-        Self { messages: initial_messages(evidence), seen: evidence.to_string() }
+    fn new(evidence: &str, corpus: &str) -> Self {
+        let messages = initial_messages(evidence);
+        Self { messages, seen: corpus.to_string(), called: BTreeSet::new(), stale: 0 }
     }
 
     /// Advances one turn, executing tools or returning the final report.
@@ -688,7 +703,7 @@ impl Session {
         deadline: Instant,
     ) -> Option<String> {
         let mut turn = 0;
-        while !expired(deadline) && turn < MAX_TURNS {
+        while !expired(deadline) && turn < MAX_TURNS && self.stale < STALE_LIMIT {
             turn += 1;
             if let Some(text) = self.turn(turn, key, model, ctx) {
                 return Some(text);
@@ -744,13 +759,52 @@ impl Session {
     /// * `calls` - Tool call objects.
     /// * `ctx` - Tool context.
     fn run_calls(&mut self, calls: &[serde_json::Value], ctx: &ToolContext<'_>) {
+        let mut fresh = 0;
         for call in calls {
             let (id, name, arg) = parse_call(call);
-            eprintln!("rea: tool {name} {arg}");
-            let observation = tools::run(ctx, &name, &arg);
-            self.seen.push_str(&observation);
-            append_tool(&mut self.messages, &id, &clip(&observation));
+            fresh += usize::from(self.invoke(&id, &name, &arg, ctx));
         }
+        self.stale = if fresh == 0 { self.stale + 1 } else { 0 };
+    }
+
+    /// Runs one tool call unless its signature was already executed.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Tool call identifier.
+    /// * `name` - Tool name.
+    /// * `arg` - Tool argument text.
+    /// * `ctx` - Tool context.
+    ///
+    /// # Returns
+    ///
+    /// `true` when the call was new and executed.
+    fn invoke(&mut self, id: &str, name: &str, arg: &str, ctx: &ToolContext<'_>) -> bool {
+        if self.called.insert(format!("{name} {arg}")) {
+            return self.record(id, name, arg, ctx);
+        }
+        append_tool(&mut self.messages, id, DUPLICATE_NOTE);
+        false
+    }
+
+    /// Executes a tool call and appends its observation.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Tool call identifier.
+    /// * `name` - Tool name.
+    /// * `arg` - Tool argument text.
+    /// * `ctx` - Tool context.
+    ///
+    /// # Returns
+    ///
+    /// Always `true`.
+    fn record(&mut self, id: &str, name: &str, arg: &str, ctx: &ToolContext<'_>) -> bool {
+        eprintln!("rea: tool {name} {arg}");
+        let observation = tools::run(ctx, name, arg);
+        self.seen.push_str(&observation);
+        append_tool(&mut self.messages, id, &clip(&observation));
+        true
     }
 }
 
@@ -893,12 +947,19 @@ fn quotes(text: &str) -> Vec<String> {
 /// * `model` - Model identifier.
 /// * `ctx` - Tool context.
 /// * `evidence` - Evidence dossier.
+/// * `corpus` - Evidence plus full string set for grounding.
 ///
 /// # Returns
 ///
 /// The final report, or `None`.
-fn run_loop(key: &str, model: &str, ctx: &ToolContext<'_>, evidence: &str) -> Option<String> {
-    let mut session = Session::new(evidence);
+fn run_loop(
+    key: &str,
+    model: &str,
+    ctx: &ToolContext<'_>,
+    evidence: &str,
+    corpus: &str,
+) -> Option<String> {
+    let mut session = Session::new(evidence, corpus);
     let deadline = Instant::now() + ai_budget();
     let draft = session.run(key, model, ctx, deadline);
     draft.or_else(|| session.finalize(key, model))
@@ -930,8 +991,24 @@ pub fn evaluate(analysis: &Analysis, bytes: &[u8]) -> Option<String> {
     let model = model_name();
     eprintln!("rea: running autonomous AI analyst loop ({model})");
     let evidence = build_evidence(analysis);
+    let corpus = corpus(analysis, &evidence);
     let ctx = ToolContext { analysis, bytes };
-    run_loop(&key, &model, &ctx, &evidence)
+    run_loop(&key, &model, &ctx, &evidence, &corpus)
+}
+
+/// Builds the grounding corpus from the dossier and every extracted string.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed engine analysis.
+/// * `evidence` - Evidence dossier text.
+///
+/// # Returns
+///
+/// The concatenated corpus text.
+fn corpus(analysis: &Analysis, evidence: &str) -> String {
+    let strings: Vec<&str> = analysis.strings.iter().map(|s| s.text.as_str()).collect();
+    format!("{evidence}\n{}", strings.join("\n"))
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v5.2.1
+**Current release:** v5.3.0
 **Document owner:** Kevin Thomas
 
 ---
@@ -45,6 +45,7 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.1.0 | DWARF, PDB, YARA-subset, Java `.class`, Android `resources.arsc`, crypto expansion, artifact report sections, 31-tool MCP. |
 | v5.2.0 | Autonomous analyst rebuilt: native tool calling, 90-turn loop, LLM-authored grounded report, entropy regions + 8051 tools, DeepSeek V4.1 Flash default. |
 | v5.2.1 | Fix decompiler infinite loop (self/cyclic copy map, oscillating fixpoints); bound the analyst loop with a wall-clock budget and forced final report. |
+| v5.3.0 | Firmware container decoding + load-base re-basing (`REA_LOAD_BASE`), analyst dedupe/no-progress stop, full-string grounding, instruction-annotation accuracy fixes. |
 
 ---
 

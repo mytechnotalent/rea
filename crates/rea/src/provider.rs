@@ -268,11 +268,58 @@ fn prepare(bytes: &[u8], target: &Path) -> Option<String> {
     if rea_engine::detect::detect(bytes).is_native() {
         return target.to_str().map(str::to_string);
     }
+    wrap_path(bytes)
+}
+
+/// Writes a wrapped ELF for a raw image and returns its path.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw firmware bytes.
+///
+/// # Returns
+///
+/// The wrapped ELF path, or `None`.
+fn wrap_path(bytes: &[u8]) -> Option<String> {
     let entry = u32::try_from(rea_engine::detect::arm_entry(bytes).unwrap_or(0)).unwrap_or(0);
-    let wrapped = rea_engine::elfwrap::wrap_arm(bytes, entry);
+    let wrapped = rea_engine::elfwrap::wrap_arm_at(bytes, load_base(bytes), entry);
     let path = std::env::temp_dir().join("rea-provider.elf");
     fs::write(&path, &wrapped.bytes).ok()?;
     path.to_str().map(str::to_string)
+}
+
+/// Resolves the raw-image load base from the environment or container header.
+///
+/// `REA_LOAD_BASE` overrides container detection when set to a hex value.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw firmware bytes.
+///
+/// # Returns
+///
+/// The load base address, defaulting to zero.
+fn load_base(bytes: &[u8]) -> u32 {
+    std::env::var("REA_LOAD_BASE")
+        .ok()
+        .and_then(|text| parse_hex(&text))
+        .unwrap_or_else(|| {
+            rea_engine::container::parse(bytes).and_then(|found| found.base).unwrap_or(0)
+        })
+}
+
+/// Parses a hexadecimal address with or without a `0x` prefix.
+///
+/// # Arguments
+///
+/// * `text` - Address text.
+///
+/// # Returns
+///
+/// The parsed address, or `None`.
+fn parse_hex(text: &str) -> Option<u32> {
+    let body = text.trim().trim_start_matches("0x").trim_start_matches("0X");
+    u32::from_str_radix(body, 16).ok()
 }
 
 #[cfg(test)]

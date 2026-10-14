@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.2.1
+# Reverse Engineering Assistant (REA) v5.3.0
 
 Autonomous Reverse Engineering Framework
 
@@ -17,6 +17,16 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 **Targets in. Answers out.** One command. Hybrid autonomous multi-agent reasoning and deterministic engine. Built in 100% pure Rust.
 
 <br>
+
+# New in v5.3.0
+
+REA v5.3.0 adds firmware-container awareness and sharpens analysis quality:
+
+- **Firmware Container Decoding.** Detects multi-record flash-container headers and reports the entry point, declared size, descriptor records, and the deduced runtime load base in a new report section, so firmware is analyzed at its true address instead of a flat offset map.
+- **Correct Raw-Image Base.** Raw firmware handed to the provider (Binary Ninja) is wrapped at its detected load base, so addresses, cross-references, and symbols resolve at the real runtime address. Override with `REA_LOAD_BASE`.
+- **Faster Analyst Loop.** The autonomous analyst skips duplicate tool calls and stops after repeated no-progress turns, cutting wasted turns and cost.
+- **Stronger Grounding.** The grounding validator now checks quotations against the full extracted-string set, not just the dossier, reducing false positives.
+- **Accurate Instructions.** Fixed register corruption in immediate formatting (`r12` no longer becomes `r0xc`) and corrected branch classification (`beq` is a conditional branch with its condition, not "unconditional"); block stores/loads (`stm`/`ldm`) are described as stack-frame operations.
 
 # New in v5.2.1
 

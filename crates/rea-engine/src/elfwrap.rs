@@ -65,11 +65,31 @@ pub struct Wrapped {
 /// The wrapped ELF and its entry address.
 #[must_use]
 pub fn wrap_arm(raw: &[u8], entry: u32) -> Wrapped {
-    let mut bytes = elf_header(entry);
-    bytes.extend_from_slice(&program_header(raw.len()));
+    wrap_arm_at(raw, 0, entry)
+}
+
+/// Wraps a raw 32-bit ARM image as an ELF mapped at a chosen base.
+///
+/// The raw bytes are mapped at `base`, so an analysis engine that only
+/// auto-loads known formats can decompile headerless firmware at its true
+/// runtime address.
+///
+/// # Arguments
+///
+/// * `raw` - Raw firmware bytes.
+/// * `base` - Virtual address the raw image is mapped to.
+/// * `entry` - Entry address within the raw image.
+///
+/// # Returns
+///
+/// The wrapped ELF and its absolute entry address.
+#[must_use]
+pub fn wrap_arm_at(raw: &[u8], base: u32, entry: u32) -> Wrapped {
+    let mut bytes = elf_header(base.wrapping_add(entry));
+    bytes.extend_from_slice(&program_header(raw.len(), base));
     bytes.resize(LOAD_OFFSET, 0);
     bytes.extend_from_slice(raw);
-    Wrapped { bytes, entry }
+    Wrapped { bytes, entry: base.wrapping_add(entry) }
 }
 
 /// Builds the ELF header for a raw ARM image.
@@ -123,19 +143,32 @@ fn elf_meta(header: &mut [u8]) {
 /// # Arguments
 ///
 /// * `size` - Raw image length.
+/// * `base` - Virtual address the raw image is mapped to.
 ///
 /// # Returns
 ///
 /// The 32-byte program header.
-fn program_header(size: usize) -> Vec<u8> {
+fn program_header(size: usize, base: u32) -> Vec<u8> {
     let mut header = vec![0u8; PHDR];
     let len = u32::try_from(size).unwrap_or(u32::MAX);
-    put_u32(&mut header, 0, PT_LOAD);
-    put_u32(&mut header, 4, 0x1000);
+    program_bounds(&mut header, base);
     put_u32(&mut header, 16, len);
     put_u32(&mut header, 20, len);
     program_flags(&mut header);
     header
+}
+
+/// Writes the segment type, file offset, and address fields.
+///
+/// # Arguments
+///
+/// * `header` - Program header buffer.
+/// * `base` - Virtual address the raw image is mapped to.
+fn program_bounds(header: &mut [u8], base: u32) {
+    put_u32(header, 0, PT_LOAD);
+    put_u32(header, 4, 0x1000);
+    put_u32(header, 8, base);
+    put_u32(header, 12, base);
 }
 
 /// Writes the program header permission and alignment fields.
@@ -195,5 +228,15 @@ mod tests {
         let offset = u32::from_le_bytes(wrapped.bytes[ph + 4..ph + 8].try_into().unwrap());
         assert_eq!(kind, PT_LOAD);
         assert_eq!(offset as usize, LOAD_OFFSET);
+    }
+
+    /// Verifies a nonzero base sets the segment and entry addresses.
+    #[test]
+    fn test_wrap_arm_base() {
+        let wrapped = wrap_arm_at(&[0u8; 16], 0x0400_0000, 0x40);
+        let ph = EHDR;
+        let vaddr = u32::from_le_bytes(wrapped.bytes[ph + 8..ph + 12].try_into().unwrap());
+        assert_eq!(vaddr, 0x0400_0000);
+        assert_eq!(wrapped.entry, 0x0400_0040);
     }
 }

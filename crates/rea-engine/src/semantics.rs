@@ -35,6 +35,36 @@ use crate::{
     model::Arch,
 };
 
+/// Branch mnemonics mapped to plain-English conditions.
+const CONDITIONS: [(&str, &str); 26] = [
+    ("beq", "equal"),
+    ("bne", "not equal"),
+    ("blt", "signed less than"),
+    ("ble", "signed less or equal"),
+    ("bgt", "signed greater than"),
+    ("bge", "signed greater or equal"),
+    ("bhi", "unsigned higher"),
+    ("bls", "unsigned lower or same"),
+    ("bcs", "carry set"),
+    ("bcc", "carry clear"),
+    ("bmi", "minus"),
+    ("bpl", "plus"),
+    ("bvs", "overflow set"),
+    ("bvc", "overflow clear"),
+    ("je", "equal"),
+    ("jne", "not equal"),
+    ("jz", "zero"),
+    ("jnz", "not zero"),
+    ("jl", "less"),
+    ("jle", "less or equal"),
+    ("jg", "greater"),
+    ("jge", "greater or equal"),
+    ("jc", "carry set"),
+    ("jnc", "carry clear"),
+    ("js", "sign set"),
+    ("jns", "sign clear"),
+];
+
 /// Normalizes decimal literals into clean hexadecimal numbers.
 ///
 /// # Arguments
@@ -62,12 +92,28 @@ pub fn format_imm_hex(text: &str) -> String {
 /// * `chars` - Peekable iterator of remaining characters.
 /// * `out` - Destination string buffer.
 fn process_char(c: char, chars: &mut std::iter::Peekable<std::str::Chars>, out: &mut String) {
-    if c.is_ascii_digit() {
+    if c.is_ascii_digit() && !preceded_by_ident(out) {
         let num_str = collect_digits(c, chars);
         append_num(out, &num_str);
     } else {
         out.push(c);
     }
+}
+
+/// Reports whether the output ends in an identifier character.
+///
+/// Prevents register names such as `r12` from being rewritten as `r0xc`.
+///
+/// # Arguments
+///
+/// * `out` - Output buffer.
+///
+/// # Returns
+///
+/// `true` when the last character is part of an identifier.
+fn preceded_by_ident(out: &str) -> bool {
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '.';
+    out.chars().last().is_some_and(ident)
 }
 
 /// Collects consecutive digit characters from the stream.
@@ -153,7 +199,7 @@ fn classify_non_stack(m: &str) -> &'static str {
 ///
 /// `true` for push or pop.
 fn is_stack_op(m: &str) -> bool {
-    m.starts_with("push") || m.starts_with("pop")
+    m.starts_with("push") || m.starts_with("pop") || m.starts_with("stm") || m.starts_with("ldm")
 }
 
 /// Categorizes memory load, store, or move operations.
@@ -278,13 +324,13 @@ fn is_logic_or_shift(m: &str) -> bool {
 /// Semantic discussion string.
 fn discuss_stack(text: &str) -> String {
     let lower = text.to_ascii_lowercase();
-    if lower.contains("push") {
-        push_text(text)
-    } else if lower.contains("pop") {
-        discuss_pop(text)
-    } else {
-        discuss_stack_adjust(&lower)
+    if lower.starts_with("stm") || lower.contains("push") {
+        return push_text(text);
     }
+    if lower.starts_with("ldm") || lower.contains("pop") {
+        return discuss_pop(text);
+    }
+    discuss_stack_adjust(&lower)
 }
 
 /// Discusses push operations.
@@ -297,6 +343,9 @@ fn discuss_stack(text: &str) -> String {
 ///
 /// Discussion string.
 fn push_text(text: &str) -> String {
+    if text.to_ascii_lowercase().contains("lr") {
+        return "Saves registers and the return address to the stack frame.".into();
+    }
     match operands_of(text).first() {
         Some(op) => format!("Pushes {op} onto the stack, saving its value."),
         None => "Saves registers and the return address to the stack frame.".into(),
@@ -530,13 +579,30 @@ fn discuss_direct_branch(text: &str) -> String {
 ///
 /// # Returns
 ///
-/// `Unconditional branch` or `Conditional branch`.
-fn branch_kind(text: &str) -> &'static str {
+/// `Unconditional branch`, or a conditional branch with its condition.
+fn branch_kind(text: &str) -> String {
     if is_unconditional(&text.to_ascii_lowercase()) {
-        "Unconditional branch"
-    } else {
-        "Conditional branch"
+        return "Unconditional branch".to_string();
     }
+    match condition_name(text) {
+        Some(name) => format!("Conditional branch ({name})"),
+        None => "Conditional branch".to_string(),
+    }
+}
+
+/// Returns the plain-English condition for a conditional branch mnemonic.
+///
+/// # Arguments
+///
+/// * `text` - Instruction text.
+///
+/// # Returns
+///
+/// The condition name, or `None` when unknown.
+fn condition_name(text: &str) -> Option<&'static str> {
+    let token = text.to_ascii_lowercase();
+    let mnemonic = token.split_whitespace().next()?.split('.').next()?;
+    CONDITIONS.iter().find(|(code, _)| *code == mnemonic).map(|(_, name)| *name)
 }
 
 /// Reports whether a branch mnemonic is unconditional.
@@ -549,7 +615,8 @@ fn branch_kind(text: &str) -> &'static str {
 ///
 /// `true` for unconditional branches.
 fn is_unconditional(lower: &str) -> bool {
-    (lower.starts_with('b') && !lower.starts_with("bl")) || lower.starts_with("jmp")
+    let mnemonic = lower.split_whitespace().next().unwrap_or(lower);
+    matches!(mnemonic, "b" | "bal" | "jmp" | "bra")
 }
 
 /// Extracts the hexadecimal branch or call target.
@@ -1174,6 +1241,26 @@ mod tests {
     fn test_format_imm_hex() {
         assert_eq!(format_imm_hex("mov r0, #268435818"), "mov r0, #0x1000016a");
         assert_eq!(format_imm_hex("mov r0, 5"), "mov r0, 5");
+    }
+
+    /// Verifies register numbers are not rewritten as limbs.
+    #[test]
+    fn test_format_imm_hex_keeps_registers() {
+        assert_eq!(format_imm_hex("ldr r12, [r4, #16]"), "ldr r12, [r4, #0x10]");
+    }
+
+    /// Verifies a conditional branch is named with its condition.
+    #[test]
+    fn test_branch_condition_named() {
+        assert!(discuss_branch("beq 0x100").contains("Conditional branch (equal)"));
+        assert!(discuss_branch("b 0x100").contains("Unconditional branch"));
+    }
+
+    /// Verifies block store/load transfers are described as stack operations.
+    #[test]
+    fn test_stack_block_transfer() {
+        assert_eq!(classify_mnemonic("stmdb"), "Stack Frame");
+        assert!(discuss_stack("stmdb sp!,{r4,r5,lr}").contains("stack frame"));
     }
 
     /// Verifies classification of stack mnemonics.

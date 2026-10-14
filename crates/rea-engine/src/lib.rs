@@ -40,6 +40,9 @@ pub mod capabilities;
 /// .NET CIL method-body disassembly.
 pub mod cil;
 
+/// Firmware container header decoding.
+pub mod container;
+
 /// File format identification by signature.
 pub mod detect;
 

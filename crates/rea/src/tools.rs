@@ -47,6 +47,32 @@ pub struct ToolContext<'a> {
     pub bytes: &'a [u8],
 }
 
+/// A tool that ignores its argument.
+type DirectTool = fn(&ToolContext<'_>) -> String;
+
+/// A tool that consumes a text argument.
+type ArgTool = fn(&ToolContext<'_>, &str) -> String;
+
+/// Tools that ignore their argument.
+const DIRECT_TOOLS: [(&str, DirectTool); 6] = [
+    ("functions", list_functions),
+    ("decrypt", recover_strings),
+    ("rules", run_rules),
+    ("audit", run_audit),
+    ("crypto", run_crypto),
+    ("regions", region_summary),
+];
+
+/// Tools that consume a text argument.
+const ARG_TOOLS: [(&str, ArgTool); 6] = [
+    ("decompile", decompile_at),
+    ("strings", find_strings),
+    ("emulate", emulate_at),
+    ("read", read_bytes),
+    ("unpack", unpack_at),
+    ("8051", disasm_8051),
+];
+
 /// Executes a named tool with a text argument.
 ///
 /// # Arguments
@@ -60,14 +86,39 @@ pub struct ToolContext<'a> {
 /// The tool result text.
 #[must_use]
 pub fn run(ctx: &ToolContext<'_>, name: &str, args: &str) -> String {
-    match name {
-        "functions" => list_functions(ctx),
-        "decrypt" => recover_strings(ctx),
-        "rules" => run_rules(ctx),
-        "audit" => run_audit(ctx),
-        "crypto" => run_crypto(ctx),
-        _ => run_arg(ctx, name, args.trim()),
+    if let Some(text) = direct_tool(ctx, name) {
+        return text;
     }
+    run_arg(ctx, name, args.trim())
+}
+
+/// Runs an argument-free tool by name.
+///
+/// # Arguments
+///
+/// * `ctx` - Tool context.
+/// * `name` - Tool name.
+///
+/// # Returns
+///
+/// The tool result, or `None` when the name is unknown.
+fn direct_tool(ctx: &ToolContext<'_>, name: &str) -> Option<String> {
+    let hit = DIRECT_TOOLS.iter().find(|(tool, _)| *tool == name);
+    hit.map(|(_, apply)| apply(ctx))
+}
+
+/// Segments the target by entropy and classifies each region.
+///
+/// # Arguments
+///
+/// * `ctx` - Tool context.
+///
+/// # Returns
+///
+/// The formatted region map.
+fn region_summary(ctx: &ToolContext<'_>) -> String {
+    let regions = rea_engine::regions::segment(ctx.bytes);
+    rea_engine::regions::format_regions(&regions)
 }
 
 /// Detects cryptographic constants in the target.
@@ -183,14 +234,46 @@ fn rule_line(item: &rea_engine::rules::RuleMatch) -> String {
 ///
 /// The tool result text.
 fn run_arg(ctx: &ToolContext<'_>, name: &str, arg: &str) -> String {
-    match name {
-        "decompile" => decompile_at(ctx, arg),
-        "strings" => find_strings(ctx, arg),
-        "emulate" => emulate_at(ctx, arg),
-        "read" => read_bytes(ctx, arg),
-        "unpack" => unpack_at(ctx, arg),
-        _ => format!("unknown tool '{name}'"),
+    let hit = ARG_TOOLS.iter().find(|(tool, _)| *tool == name);
+    hit.map_or_else(
+        || format!("unknown tool '{name}'"),
+        |(_, apply)| apply(ctx, arg),
+    )
+}
+
+/// Disassembles bytes at an offset as 8051 code.
+///
+/// # Arguments
+///
+/// * `ctx` - Tool context.
+/// * `arg` - Optional hex offset.
+///
+/// # Returns
+///
+/// The 8051 listing.
+fn disasm_8051(ctx: &ToolContext<'_>, arg: &str) -> String {
+    let offset = parse_address(arg).unwrap_or(0);
+    let start = usize::try_from(offset).unwrap_or(0);
+    let code = ctx.bytes.get(start..).unwrap_or_default();
+    let lines = rea_engine::i8051::disassemble(code, offset, LIMIT);
+    join_lines(&lines, "no 8051 instructions decoded")
+}
+
+/// Joins lines, returning a placeholder when empty.
+///
+/// # Arguments
+///
+/// * `lines` - Output lines.
+/// * `empty` - Placeholder for the empty case.
+///
+/// # Returns
+///
+/// The joined text.
+fn join_lines(lines: &[String], empty: &str) -> String {
+    if lines.is_empty() {
+        return empty.to_string();
     }
+    lines.join("\n")
 }
 
 /// Unpacks the target from an address or across all function entries.

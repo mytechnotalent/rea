@@ -29,6 +29,9 @@
 // Import crate::disasm
 use crate::disasm::{ends_block, referenced_addresses, CodeMap};
 
+// Import crate::model
+use crate::model::{Binary, Section};
+
 // Import dependencies from iced_x86
 use iced_x86::{Decoder, DecoderOptions, FlowControl, Formatter, Instruction, IntelFormatter};
 
@@ -70,6 +73,102 @@ pub fn render(
 
 /// Comment source mapping a referenced address to an annotation.
 pub type Annotate<'a> = dyn Fn(u64) -> Option<String> + 'a;
+
+/// Produces a complete assembler listing of every executable section.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+/// * `bytes` - Whole target file.
+/// * `max` - Maximum instructions to list.
+///
+/// # Returns
+///
+/// One formatted line per instruction, in address order.
+#[must_use]
+pub fn full(binary: &Binary, bytes: &[u8], max: usize) -> Vec<String> {
+    match binary.arch.x86_bitness() {
+        Some(bitness) => full_x86(binary, bytes, bitness, max),
+        None => crate::multiarch::full_listing(binary, bytes, max),
+    }
+}
+
+/// Linearly disassembles every x86/x86-64 executable section.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+/// * `bytes` - Whole target file.
+/// * `bitness` - Decoder bitness.
+/// * `max` - Maximum instructions to list.
+///
+/// # Returns
+///
+/// The assembler listing.
+fn full_x86(binary: &Binary, bytes: &[u8], bitness: u32, max: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for section in &binary.sections {
+        if out.len() >= max {
+            break;
+        }
+        sweep_section(section, bytes, bitness, max, &mut out);
+    }
+    out
+}
+
+/// Sweeps one executable section into the listing.
+///
+/// # Arguments
+///
+/// * `section` - Section to sweep.
+/// * `bytes` - Whole target file.
+/// * `bitness` - Decoder bitness.
+/// * `max` - Maximum instructions to list.
+/// * `out` - Accumulated lines.
+fn sweep_section(section: &Section, bytes: &[u8], bitness: u32, max: usize, out: &mut Vec<String>) {
+    if !section.executable {
+        return;
+    }
+    let mut formatter = configured_formatter();
+    let data = section.data(bytes);
+    let decoder = Decoder::with_ip(bitness, data, section.address, DecoderOptions::NONE);
+    collect_lines(decoder, &mut formatter, max, out);
+}
+
+/// Appends one decoded line per instruction.
+///
+/// # Arguments
+///
+/// * `decoder` - Instruction decoder.
+/// * `formatter` - Instruction formatter.
+/// * `max` - Maximum instructions to list.
+/// * `out` - Accumulated lines.
+fn collect_lines(
+    decoder: Decoder,
+    formatter: &mut IntelFormatter,
+    max: usize,
+    out: &mut Vec<String>,
+) {
+    for instruction in decoder {
+        if out.len() >= max {
+            return;
+        }
+        out.push(line(formatter, &instruction, 8, &no_note));
+    }
+}
+
+/// Returns no annotation for a referenced address.
+///
+/// # Arguments
+///
+/// * `_address` - Referenced address.
+///
+/// # Returns
+///
+/// Always `None`.
+fn no_note(_address: u64) -> Option<String> {
+    None
+}
 
 /// Builds the formatter used for every listing.
 ///

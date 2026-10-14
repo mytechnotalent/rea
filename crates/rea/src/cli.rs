@@ -200,6 +200,7 @@ fn dispatch_subcommand(cmd: &str, rest: &[String]) -> ExitCode {
         .or_else(|| dispatch_inspect4(cmd, rest))
         .or_else(|| dispatch_inspect5(cmd, rest))
         .or_else(|| dispatch_inspect6(cmd, rest))
+        .or_else(|| dispatch_inspect7(cmd, rest))
         .unwrap_or_else(|| dispatch_named(cmd, rest))
 }
 
@@ -218,6 +219,8 @@ fn dispatch_inspect2(cmd: &str, rest: &[String]) -> Option<ExitCode> {
         "dotnet" => Some(dispatch_dotnet(rest)),
         "emulate" => Some(dispatch_emulate(rest)),
         "unpack" => Some(dispatch_unpack(rest)),
+        "disasm" => Some(dispatch_disasm(rest)),
+        "regions" => Some(dispatch_regions(rest)),
         _ => None,
     }
 }
@@ -299,8 +302,40 @@ fn dispatch_inspect6(cmd: &str, rest: &[String]) -> Option<ExitCode> {
         "dwarf" => Some(dispatch_dwarf(rest)),
         "yara" => Some(dispatch_yara(rest)),
         "pdb" => Some(dispatch_pdb(rest)),
+        "8051" => Some(dispatch_i8051(rest)),
         _ => None,
     }
+}
+
+/// Dispatches external provider subcommands.
+///
+/// # Arguments
+///
+/// * `cmd` - Subcommand keyword.
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Exit code if matched, otherwise `None`.
+fn dispatch_inspect7(cmd: &str, rest: &[String]) -> Option<ExitCode> {
+    match cmd {
+        "provider" => Some(dispatch_provider(rest)),
+        _ => None,
+    }
+}
+
+/// Dispatches provider subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_provider(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::provider_cmd(Path::new(t)))
 }
 
 /// Dispatches mcp server or config subcommand.
@@ -407,6 +442,34 @@ fn dispatch_decrypt(rest: &[String]) -> ExitCode {
 fn dispatch_dotnet(rest: &[String]) -> ExitCode {
     rest.first()
         .map_or_else(usage_error, |t| crate::inspect::dotnet_cmd(Path::new(t)))
+}
+
+/// Dispatches disasm subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_disasm(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::disasm_cmd(Path::new(t)))
+}
+
+/// Dispatches regions subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_regions(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::regions_cmd(Path::new(t)))
 }
 
 /// Dispatches emulate subcommand.
@@ -681,6 +744,26 @@ fn dispatch_yara(rest: &[String]) -> ExitCode {
 /// Process exit code.
 fn dispatch_pdb(rest: &[String]) -> ExitCode {
     rest.first().map_or_else(usage_error, |t| crate::inspect::pdb_cmd(Path::new(t)))
+}
+
+/// Dispatches 8051 subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_i8051(rest: &[String]) -> ExitCode {
+    match rest {
+        [target] => crate::inspect::i8051_cmd(Path::new(target), None, None),
+        [target, offset] => crate::inspect::i8051_cmd(Path::new(target), Some(offset), None),
+        [target, offset, base] => {
+            crate::inspect::i8051_cmd(Path::new(target), Some(offset), Some(base))
+        }
+        _ => usage_error(),
+    }
 }
 
 /// Dispatches analyze subcommand.
@@ -981,9 +1064,29 @@ pub fn run(target: &Path) -> Result<ReportPaths, CliError> {
     let analysis = analyze_path(target).map_err(CliError::Engine)?;
     let bytes = fs::read(target).unwrap_or_default();
     let paths = report_paths(target);
+    write_artifacts(&paths, &analysis, &bytes)?;
     emit_reports(target, &paths, &analysis)?;
-    write_json(&paths, &analysis, &bytes)?;
     Ok(paths)
+}
+
+/// Writes the machine-readable JSON and assembler artifacts.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// Unit when successful.
+///
+/// # Errors
+///
+/// Returns [`CliError::Write`] when a file cannot be written.
+fn write_artifacts(paths: &ReportPaths, analysis: &Analysis, bytes: &[u8]) -> Result<(), CliError> {
+    write_json(paths, analysis, bytes)?;
+    write_asm(paths, analysis, bytes)
 }
 
 /// Writes the machine-readable JSON report.
@@ -1003,6 +1106,32 @@ pub fn run(target: &Path) -> Result<ReportPaths, CliError> {
 /// Returns [`CliError::Write`] when the file cannot be written.
 fn write_json(paths: &ReportPaths, analysis: &Analysis, bytes: &[u8]) -> Result<(), CliError> {
     write(&paths.json, crate::json::report(analysis, bytes).as_bytes())
+}
+
+/// Most instructions written to the assembler listing.
+const MAX_ASM: usize = 4_000_000;
+
+/// Writes the full assembler listing beside the report.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// Unit when successful.
+///
+/// # Errors
+///
+/// Returns [`CliError::Write`] when the file cannot be written.
+fn write_asm(paths: &ReportPaths, analysis: &Analysis, bytes: &[u8]) -> Result<(), CliError> {
+    let Some(binary) = analysis.binary.as_ref() else {
+        return Ok(());
+    };
+    let lines = rea_engine::listing::full(binary, bytes, MAX_ASM);
+    write(&paths.asm, lines.join("\n").as_bytes())
 }
 
 /// Refuses directory targets.

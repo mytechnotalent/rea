@@ -55,5 +55,8 @@ pub mod mcp;
 /// Engine tools invoked by the autonomous agent loop.
 pub mod tools;
 
+/// External analysis provider (Binary Ninja over MCP).
+pub mod provider;
+
 /// Machine-readable JSON report.
 pub mod json;

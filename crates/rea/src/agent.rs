@@ -38,21 +38,66 @@ use serde_json::json;
 // Import crate::tools
 use crate::tools::{self, ToolContext};
 
-/// System prompt for the autonomous tool-using analyst agent.
-const AGENT_PROMPT: &str = "You are a principal reverse engineering analyst with tools to inspect \
-the target. Investigate autonomously and never fabricate. To use a tool, reply with a single line \
-'ACTION: <tool> <argument>', where <tool> is one of: functions; decompile <name|0xaddr>; \
-strings <query>; emulate <0xaddr>; read <0xaddr> <len>; decrypt; rules; audit; crypto. You then \
-receive an OBSERVATION. When you have the answer, reply with 'FINAL:' followed by an authoritative \
-report with the sections \
-Executive Overview, Architecture Analysis, Program Logic, Recovered Secrets (flags, keys, C2, \
-credentials), and Recommendations. Ground every claim in observations and disassembly.";
+/// Default model used when `OPENROUTER_MODEL` is unset.
+const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
 
-/// Instruction appended to the evidence dossier describing the tool protocol.
-const TOOL_NOTE: &str = "You may call tools to gather more evidence before answering.";
+/// System prompt for the autonomous tool-using analyst agent.
+const AGENT_PROMPT: &str = "You are a principal reverse engineering analyst and the AUTHOR of the \
+final security assessment report. You have tools to inspect the target. Investigate autonomously \
+and ground every claim in tool observations and the provided evidence; never fabricate strings, \
+offsets, keys, or behavior. Call tools as often as needed, then write the complete report \
+yourself. Your report MUST contain the sections: Executive Overview; Target Summary; Architecture \
+Analysis; Program Logic; Recovered Secrets (flags, keys, C2, credentials); Indicators of \
+Compromise; and Recommendations. Cite concrete addresses and strings from the evidence. When a \
+fact is unknown or encrypted, state that plainly rather than guessing.";
+
+/// Instruction appended to the evidence dossier describing the model's role.
+const TOOL_NOTE: &str =
+    "You are the report's author. Use the tools to gather additional evidence, \
+then produce the full narrative assessment. The evidence dossier is source material, not the \
+report: expand it into an authoritative write-up.";
 
 /// Maximum agent turns before stopping.
-const MAX_TURNS: usize = 4;
+const MAX_TURNS: usize = 90;
+
+/// Tool specifications exposed to the model: name and description.
+const TOOL_SPECS: [(&str, &str); 11] = [
+    ("functions", "List recovered and key functions."),
+    ("decompile", "Decompile a function by name or hex address."),
+    ("strings", "Search recovered strings for a substring."),
+    ("read", "Hex dump bytes at an address: '0xADDR LEN'."),
+    (
+        "emulate",
+        "Emulate from a hex address and report recovered flags.",
+    ),
+    (
+        "unpack",
+        "Emulate with stubbed imports to decrypt protected regions.",
+    ),
+    ("decrypt", "Recover strings hidden by simple byte ciphers."),
+    (
+        "rules",
+        "Evaluate capability rules (ATT&CK and MBC mapping).",
+    ),
+    (
+        "audit",
+        "Audit for vulnerable API sinks with CWE identifiers.",
+    ),
+    (
+        "crypto",
+        "Detect cryptographic constants such as AES, SHA, CRC32.",
+    ),
+    (
+        "regions",
+        "Segment the target by entropy and classify each region.",
+    ),
+];
+
+/// Minimum quotation length considered by the grounding validator.
+const GROUNDING_MIN: usize = 6;
+
+/// Maximum unverified quotations listed in the grounding note.
+const GROUNDING_LIMIT: usize = 8;
 
 /// Reads the API key from environment variables.
 ///
@@ -125,29 +170,65 @@ pub fn load_api_key() -> Option<String> {
 ///
 /// Model identifier string.
 fn model_name() -> String {
-    std::env::var("OPENROUTER_MODEL")
-        .unwrap_or_else(|_| "nvidia/nemotron-3.5-lightning:free".to_string())
+    std::env::var("OPENROUTER_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
 }
 
-/// Constructs a chat completion JSON payload.
+/// Constructs a tool-enabled chat completion JSON payload.
 ///
 /// # Arguments
 ///
 /// * `model` - Model identifier.
-/// * `system` - System prompt.
-/// * `prompt` - User prompt.
+/// * `messages` - Conversation message array.
 ///
 /// # Returns
 ///
 /// Serialized request body.
-fn build_payload(model: &str, system: &str, prompt: &str) -> serde_json::Value {
+fn build_payload(model: &str, messages: &serde_json::Value) -> serde_json::Value {
     json!({
         "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt}
-        ]
+        "messages": messages,
+        "tools": tool_defs(),
+        "tool_choice": "auto",
+        "temperature": 0.2
     })
+}
+
+/// Builds the JSON tool definition array from [`TOOL_SPECS`].
+///
+/// # Returns
+///
+/// Array of function tool definitions.
+fn tool_defs() -> serde_json::Value {
+    let list = TOOL_SPECS.iter().map(|(name, desc)| tool_def(name, desc)).collect();
+    serde_json::Value::Array(list)
+}
+
+/// Builds one function tool definition.
+///
+/// # Arguments
+///
+/// * `name` - Tool name.
+/// * `description` - Tool description.
+///
+/// # Returns
+///
+/// A single function tool definition.
+fn tool_def(name: &str, description: &str) -> serde_json::Value {
+    let function = json!({
+        "name": name,
+        "description": description,
+        "parameters": tool_params()
+    });
+    json!({"type": "function", "function": function})
+}
+
+/// Builds the shared single-argument tool parameter schema.
+///
+/// # Returns
+///
+/// An object schema with one optional `arg` string.
+fn tool_params() -> serde_json::Value {
+    json!({"type": "object", "properties": {"arg": {"type": "string"}}})
 }
 
 /// Dispatches an HTTP POST request to `OpenRouter`.
@@ -173,7 +254,7 @@ fn send_request(key: &str, body: &serde_json::Value) -> Result<serde_json::Value
     res.body_mut().read_json()
 }
 
-/// Extracts text content from a chat completion response.
+/// Extracts the assistant message from a chat completion response.
 ///
 /// # Arguments
 ///
@@ -181,11 +262,9 @@ fn send_request(key: &str, body: &serde_json::Value) -> Result<serde_json::Value
 ///
 /// # Returns
 ///
-/// Text content string.
-fn extract_response(val: &serde_json::Value) -> Option<String> {
-    let choice = val.get("choices")?.get(0)?;
-    let content = choice.get("message")?.get("content")?.as_str()?;
-    Some(content.to_string())
+/// The assistant message object.
+fn extract_message(val: &serde_json::Value) -> Option<serde_json::Value> {
+    val.get("choices")?.get(0)?.get("message").cloned()
 }
 
 /// Executes a single chat completion turn.
@@ -194,16 +273,15 @@ fn extract_response(val: &serde_json::Value) -> Option<String> {
 ///
 /// * `key` - API key.
 /// * `model` - Model identifier.
-/// * `system` - System prompt.
-/// * `prompt` - User prompt.
+/// * `messages` - Conversation message array.
 ///
 /// # Returns
 ///
-/// Generated message content.
-fn chat(key: &str, model: &str, system: &str, prompt: &str) -> Option<String> {
-    let body = build_payload(model, system, prompt);
+/// The assistant message object.
+fn chat(key: &str, model: &str, messages: &serde_json::Value) -> Option<serde_json::Value> {
+    let body = build_payload(model, messages);
     let val = send_request(key, &body).ok()?;
-    extract_response(&val)
+    extract_message(&val)
 }
 
 /// Appends target identity facts to evidence text.
@@ -411,83 +489,232 @@ fn build_evidence(a: &Analysis) -> String {
     out
 }
 
-/// The agent's next step.
-enum Action {
-    /// Call a tool with an argument.
-    Tool(String, String),
-
-    /// Produce the final report.
-    Final(String),
-
-    /// No structured action; treat the reply as final.
-    None,
-}
-
-/// Parses the agent's next action from a reply.
+/// Builds the initial system and user conversation messages.
 ///
 /// # Arguments
 ///
-/// * `reply` - Model reply text.
+/// * `evidence` - Evidence dossier text.
 ///
 /// # Returns
 ///
-/// The parsed action.
-fn parse_action(reply: &str) -> Action {
-    for line in reply.lines() {
-        if let Some(rest) = line.trim().strip_prefix("ACTION:") {
-            return tool_action(rest.trim());
+/// The initial message array.
+fn initial_messages(evidence: &str) -> serde_json::Value {
+    let user = format!("{evidence}\n\n{TOOL_NOTE}");
+    json!([
+        {"role": "system", "content": AGENT_PROMPT},
+        {"role": "user", "content": user}
+    ])
+}
+
+/// Reads a string field from a JSON value.
+///
+/// # Arguments
+///
+/// * `value` - Source JSON value.
+/// * `key` - Field name.
+///
+/// # Returns
+///
+/// The field text, or an empty string.
+fn text_field(value: &serde_json::Value, key: &str) -> String {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Returns the tool calls carried by an assistant message.
+///
+/// # Arguments
+///
+/// * `message` - Assistant message object.
+///
+/// # Returns
+///
+/// The tool call objects, possibly empty.
+fn calls_of(message: &serde_json::Value) -> Vec<serde_json::Value> {
+    let calls = message.get("tool_calls").and_then(serde_json::Value::as_array);
+    calls.cloned().unwrap_or_default()
+}
+
+/// Extracts the identifier, name, and argument from a tool call.
+///
+/// # Arguments
+///
+/// * `call` - Tool call object.
+///
+/// # Returns
+///
+/// A `(id, name, argument)` tuple.
+fn parse_call(call: &serde_json::Value) -> (String, String, String) {
+    let function = call.get("function").cloned().unwrap_or_default();
+    let id = text_field(call, "id");
+    let name = text_field(&function, "name");
+    (id, name, tool_arg(&function))
+}
+
+/// Extracts the `arg` parameter from a tool call function object.
+///
+/// # Arguments
+///
+/// * `function` - Tool call function object.
+///
+/// # Returns
+///
+/// The argument text, or an empty string.
+fn tool_arg(function: &serde_json::Value) -> String {
+    let args = text_field(function, "arguments");
+    let parsed: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
+    text_field(&parsed, "arg")
+}
+
+/// Appends one tool result to the conversation.
+///
+/// # Arguments
+///
+/// * `messages` - Conversation message array.
+/// * `id` - Tool call identifier.
+/// * `content` - Tool result text.
+fn append_tool(messages: &mut serde_json::Value, id: &str, content: &str) {
+    if let Some(array) = messages.as_array_mut() {
+        array.push(json!({"role": "tool", "tool_call_id": id, "content": content}));
+    }
+}
+
+/// Conversation state for one analyst run.
+struct Session {
+    /// Conversation message array.
+    messages: serde_json::Value,
+
+    /// Evidence corpus for grounding.
+    seen: String,
+}
+
+impl Session {
+    /// Creates a session seeded with the evidence dossier.
+    ///
+    /// # Arguments
+    ///
+    /// * `evidence` - Evidence dossier text.
+    ///
+    /// # Returns
+    ///
+    /// A new session.
+    fn new(evidence: &str) -> Self {
+        Self { messages: initial_messages(evidence), seen: evidence.to_string() }
+    }
+
+    /// Advances one turn, executing tools or returning the final report.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Assistant message object.
+    /// * `ctx` - Tool context.
+    ///
+    /// # Returns
+    ///
+    /// The grounded final report, or `None` to continue.
+    fn finish(&mut self, message: &serde_json::Value, ctx: &ToolContext<'_>) -> Option<String> {
+        let calls = calls_of(message);
+        self.messages.as_array_mut()?.push(message.clone());
+        if calls.is_empty() {
+            return final_report(message, &self.seen);
+        }
+        self.run_calls(&calls, ctx);
+        None
+    }
+
+    /// Executes tool calls, folding observations into the corpus.
+    ///
+    /// # Arguments
+    ///
+    /// * `calls` - Tool call objects.
+    /// * `ctx` - Tool context.
+    fn run_calls(&mut self, calls: &[serde_json::Value], ctx: &ToolContext<'_>) {
+        for call in calls {
+            let (id, name, arg) = parse_call(call);
+            let observation = tools::run(ctx, &name, &arg);
+            self.seen.push_str(&observation);
+            append_tool(&mut self.messages, &id, &observation);
         }
     }
-    reply.find("FINAL:").map_or(Action::None, |i| {
-        Action::Final(reply[i + 6..].trim().to_string())
-    })
 }
 
-/// Builds a tool action from the text after `ACTION:`.
+/// Produces the final grounded report from an assistant message.
 ///
 /// # Arguments
 ///
-/// * `rest` - Tool name and argument text.
+/// * `message` - Assistant message object.
+/// * `seen` - Evidence dossier plus tool observations.
 ///
 /// # Returns
 ///
-/// The tool action.
-fn tool_action(rest: &str) -> Action {
-    let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
-    Action::Tool(name.to_string(), args.trim().to_string())
+/// The grounded report, or `None` when the reply is empty.
+fn final_report(message: &serde_json::Value, seen: &str) -> Option<String> {
+    let content = text_field(message, "content");
+    (!content.trim().is_empty()).then(|| ground(&content, seen))
 }
 
-/// Executes one agent turn, updating the scratchpad.
+/// Flags report quotations that are absent from the evidence corpus.
 ///
 /// # Arguments
 ///
-/// * `ctx` - Tool context.
-/// * `reply` - Model reply text.
-/// * `scratch` - Growing conversation scratchpad.
+/// * `text` - Report text.
+/// * `seen` - Evidence dossier plus tool observations.
 ///
 /// # Returns
 ///
-/// The final report when produced, otherwise `None`.
-fn step(ctx: &ToolContext<'_>, reply: &str, scratch: &mut String) -> Option<String> {
-    match parse_action(reply) {
-        Action::Final(text) => Some(text),
-        Action::Tool(name, args) => {
-            append_observation(scratch, reply, &tools::run(ctx, &name, &args));
-            None
-        }
-        Action::None => Some(reply.to_string()),
+/// The report, annotated when unverified quotations are found.
+fn ground(text: &str, seen: &str) -> String {
+    let bad = unverified(text, seen);
+    if bad.is_empty() {
+        return text.to_string();
     }
+    let note = format!("{} unverified quotation(s): {}", bad.len(), sample(&bad));
+    format!("{text}\n\n[Grounding] {note}")
 }
 
-/// Appends the reply and a tool observation to the scratchpad.
+/// Selects report quotations absent from the evidence corpus.
 ///
 /// # Arguments
 ///
-/// * `scratch` - Growing conversation scratchpad.
-/// * `reply` - Model reply text.
-/// * `observation` - Tool result text.
-fn append_observation(scratch: &mut String, reply: &str, observation: &str) {
-    let _ = write!(scratch, "\n\n{reply}\nOBSERVATION:\n{observation}");
+/// * `text` - Report text.
+/// * `seen` - Evidence dossier plus tool observations.
+///
+/// # Returns
+///
+/// The unverified quotations.
+fn unverified(text: &str, seen: &str) -> Vec<String> {
+    let kept = |q: &String| q.len() >= GROUNDING_MIN && !seen.contains(q.as_str());
+    quotes(text).into_iter().filter(kept).collect()
+}
+
+/// Builds a bounded comma-separated sample of strings.
+///
+/// # Arguments
+///
+/// * `items` - Source strings.
+///
+/// # Returns
+///
+/// The sampled, joined text.
+fn sample(items: &[String]) -> String {
+    items.iter().take(GROUNDING_LIMIT).cloned().collect::<Vec<_>>().join(", ")
+}
+
+/// Collects double-quoted tokens from report text.
+///
+/// # Arguments
+///
+/// * `text` - Report text.
+///
+/// # Returns
+///
+/// The trimmed quoted tokens.
+fn quotes(text: &str) -> Vec<String> {
+    let clean = |part: &str| part.trim().trim_end_matches([',', '.', ';', ':']).to_string();
+    text.split('"').skip(1).step_by(2).map(clean).collect()
 }
 
 /// Runs the tool-calling agent loop.
@@ -503,10 +730,10 @@ fn append_observation(scratch: &mut String, reply: &str, observation: &str) {
 ///
 /// The final report, or `None`.
 fn run_loop(key: &str, model: &str, ctx: &ToolContext<'_>, evidence: &str) -> Option<String> {
-    let mut scratch = format!("{evidence}\n\n{TOOL_NOTE}");
+    let mut session = Session::new(evidence);
     for _ in 0..MAX_TURNS {
-        let reply = chat(key, model, AGENT_PROMPT, &scratch)?;
-        if let Some(text) = step(ctx, &reply, &mut scratch) {
+        let message = chat(key, model, &session.messages)?;
+        if let Some(text) = session.finish(&message, ctx) {
             return Some(text);
         }
     }
@@ -565,5 +792,33 @@ mod tests {
         let analysis = rea_engine::analyze("demo.bin", b"test data");
         let evidence = build_evidence(&analysis);
         assert!(evidence.contains("TARGET: demo.bin"));
+    }
+
+    /// Verifies tool argument extraction from a function object.
+    #[test]
+    fn test_tool_arg_parses() {
+        let function = json!({"name": "decompile", "arguments": "{\"arg\":\"0x40\"}"});
+        assert_eq!(tool_arg(&function), "0x40");
+    }
+
+    /// Verifies grounding flags quotations absent from evidence.
+    #[test]
+    fn test_ground_flags_unverified() {
+        let text = "Recovered flag \"ABC_FAKE_FLAG\" from data.";
+        assert!(ground(text, "nothing here").contains("unverified"));
+    }
+
+    /// Verifies grounding accepts quotations present in evidence.
+    #[test]
+    fn test_ground_accepts_evidence() {
+        let text = "Recovered flag \"REAL_FLAG\" from data.";
+        assert!(!ground(text, "the REAL_FLAG lives here").contains("unverified"));
+    }
+
+    /// Verifies tool definitions expose one schema per spec.
+    #[test]
+    fn test_tool_defs_shape() {
+        let defs = tool_defs();
+        assert_eq!(defs.as_array().unwrap().len(), TOOL_SPECS.len());
     }
 }

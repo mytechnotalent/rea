@@ -189,7 +189,7 @@ impl<'a> CodeMap<'a> {
     /// The code map.
     #[must_use]
     pub fn new(binary: &Binary, bytes: &'a [u8]) -> Self {
-        let code = binary.sections.iter().filter(|s| s.executable && s.address != 0);
+        let code = binary.sections.iter().filter(|s| s.executable);
         let regions = code.map(|s| (s.address, s.data(bytes))).collect();
         Self { regions }
     }
@@ -224,6 +224,16 @@ impl<'a> CodeMap<'a> {
     #[must_use]
     pub fn contains(&self, address: u64) -> bool {
         !self.bytes_at(address).is_empty()
+    }
+
+    /// Returns the executable regions as start address and file bytes.
+    ///
+    /// # Returns
+    ///
+    /// The regions in discovery order.
+    #[must_use]
+    pub fn regions(&self) -> &[(u64, &'a [u8])] {
+        &self.regions
     }
 }
 

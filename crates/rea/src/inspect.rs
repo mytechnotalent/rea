@@ -32,6 +32,9 @@ use std::{fs, path::Path, process::ExitCode};
 // Import dependencies from rea_engine
 use rea_engine::{analyze_path, decompile, disasm::Function, Analysis};
 
+/// Most instructions printed by a single listing command.
+const MAX_LISTING: usize = 4_000_000;
+
 /// Instruction budget for single-entry unpacking.
 const SINGLE_BUDGET: u64 = 200_000;
 
@@ -1145,6 +1148,125 @@ pub fn pdb_cmd(path: &Path) -> ExitCode {
 fn load_pdb(path: &Path) -> Option<rea_engine::pdb::PdbInfo> {
     let bytes = fs::read(path).ok()?;
     rea_engine::pdb::parse_pdb(&bytes)
+}
+
+/// Prints the complete assembler listing of a target.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn disasm_cmd(path: &Path) -> ExitCode {
+    let Some((binary, bytes)) = load_native(path) else {
+        eprintln!("rea disasm: no executable image");
+        return ExitCode::FAILURE;
+    };
+    print_listing(&binary, &bytes);
+    ExitCode::SUCCESS
+}
+
+/// Loads a parsed image and its raw bytes.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The parsed image and bytes, or `None`.
+fn load_native(path: &Path) -> Option<(rea_engine::model::Binary, Vec<u8>)> {
+    let binary = analyze_path(path).ok()?.binary?;
+    Some((binary, fs::read(path).ok()?))
+}
+
+/// Prints the full linear disassembly of a parsed image.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed image.
+/// * `bytes` - Raw target bytes.
+fn print_listing(binary: &rea_engine::model::Binary, bytes: &[u8]) {
+    for line in rea_engine::listing::full(binary, bytes, MAX_LISTING) {
+        println!("{line}");
+    }
+}
+
+/// Reports the segmented and classified region map.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn regions_cmd(path: &Path) -> ExitCode {
+    let Ok(bytes) = fs::read(path) else {
+        eprintln!("rea regions: failed to read target");
+        return ExitCode::FAILURE;
+    };
+    let regions = rea_engine::regions::segment(&bytes);
+    print!("{}", rea_engine::regions::format_regions(&regions));
+    ExitCode::SUCCESS
+}
+
+/// Disassembles an 8051 (MCS-51) firmware region.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+/// * `offset` - Optional hex file offset.
+/// * `base` - Optional 8051 address of the first byte.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn i8051_cmd(path: &Path, offset: Option<&str>, base: Option<&str>) -> ExitCode {
+    let Ok(bytes) = fs::read(path) else {
+        eprintln!("rea 8051: failed to read target");
+        return ExitCode::FAILURE;
+    };
+    let start = offset.and_then(parse_address).map_or(0, |v| usize::try_from(v).unwrap_or(0));
+    let origin = base.and_then(parse_address).unwrap_or(start as u64);
+    print_8051(bytes.get(start..).unwrap_or_default(), origin);
+    ExitCode::SUCCESS
+}
+
+/// Prints an 8051 disassembly listing.
+///
+/// # Arguments
+///
+/// * `code` - Code bytes.
+/// * `origin` - Address of the first byte.
+fn print_8051(code: &[u8], origin: u64) {
+    for line in rea_engine::i8051::disassemble(code, origin, MAX_LISTING) {
+        println!("{line}");
+    }
+}
+
+/// Analyzes a target through an external provider.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn provider_cmd(path: &Path) -> ExitCode {
+    let Some(text) = crate::provider::analyze(path) else {
+        eprintln!("rea provider: no analysis provider available");
+        return ExitCode::FAILURE;
+    };
+    print!("{text}");
+    ExitCode::SUCCESS
 }
 
 /// Emulates a target from its entry or a given address.

@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.1.0
+# Reverse Engineering Assistant (REA) v5.2.0
 
 Autonomous Reverse Engineering Framework
 
@@ -18,22 +18,18 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.1.0
+# New in v5.2.0
 
-REA v5.1.0 deepens the engine with native debug-symbol recovery, a signature-matching engine, JVM/mobile resource parsing, and richer artifact reporting:
+REA v5.2.0 rebuilds the autonomous analyst into a true tool-calling author, so the AI actually investigates the target instead of summarizing a static dossier:
 
-- **DWARF Debug Info.** Recovers compile units, compilation directories, and function symbols (name and low PC) from ELF `.debug_info`/`.debug_abbrev`/`.debug_str` (versions 2-4).
-- **Windows PDB.** Parses MSF containers and recovers the PDB info-stream version, age, and GUID.
-- **YARA-Subset Matching.** `rea yara <target> <rules>` matches rules with literal, case-insensitive, wide, and hex-with-wildcard patterns, with `and`/`or`/`not`, `any`/`all`/`N of them`, `#count`, and `filesize` conditions.
-- **Java Class Files.** Parses the constant pool, versions, `this`/`super` class, interfaces, methods, and fields.
-- **Android `resources.arsc`.** Recovers packages, the global string pool, and configuration locales.
-- **Crypto Expansion.** Adds Blowfish P-array, DES S-box, RC5/RC6 key-schedule, and bcrypt signatures.
-- **Source-Map VLQ Decoding.** Decodes mappings into positioned generated-to-original segments.
-- **WASM Code Bodies.** Reports per-function code-section sizes.
-- **Artifact Report Sections.** The one-shot now emits a section for every artifact format it detects.
-- **31-tool MCP Server.** Adds `inspect_dwarf`, `inspect_java`, `inspect_arsc`, and `inspect_pdb`.
+- **Native Tool Calling.** The analyst uses OpenRouter function/tool calling (JSON schemas) instead of a brittle text protocol, eliminating mis-parsed actions and hallucinated free-writing.
+- **90-Turn Investigation.** The agent loop runs up to 90 tool turns (up from 4), so it decompiles, emulates, and reads its way to an answer.
+- **The LLM Authors the Report.** The model is the report's author; deterministic engine sections feed it as evidence, and the authored assessment leads the report.
+- **Grounding Validator.** Every quoted string in the final report is checked against the evidence dossier and all tool observations; unverified quotations are flagged rather than shipped as fact.
+- **Capable Default Model.** Defaults to `deepseek/deepseek-v4.1-flash`; override with `OPENROUTER_MODEL`.
+- **Stronger Engine Tools.** The loop gains entropy `regions` segmentation and 8051 (`MCS-51`) disassembly. Every tool is pure-Rust and works one-shot with no external tools, servers, or licenses required.
 
-Retained from v5.0.0: WebAssembly, SQLite, core-dump, EVM, property-list, Flutter, PCAP/HAR, source-map, and MS-DOS analyzers; the pure-Rust decompiler; cross-architecture disassembly and emulation; emulation-driven unpacking; capa-class rules with MITRE ATT&CK/MBC; vulnerability audit with SARIF; and cipher and crypto-constant recovery.
+Retained from v5.1.0: DWARF/PDB symbols, YARA-subset matching, JVM `.class`, Android `resources.arsc`, source-map VLQ, WASM code bodies, crypto expansion, artifact report sections, and the 31-tool MCP server.
 
 <br>
 
@@ -41,7 +37,7 @@ Retained from v5.0.0: WebAssembly, SQLite, core-dump, EVM, property-list, Flutte
 
 - **One command.** `rea <file>` produces a Markdown report, an executive typeset PDF report, and a machine-readable JSON report beside the target.
 - **Any file.** Format is detected from contents, not the file extension.
-- **Autonomous AI Security Assessment.** When configured with an API key, REA runs an autonomous tool-calling analyst loop that inspects the target (decompile, emulate, decrypt, audit, rules) and writes an Executive Overview, Architecture Analysis, Evidence-Validated Vulnerabilities, and Actionable Recommendations.
+- **Autonomous AI Security Assessment.** When configured with an API key, REA runs an autonomous, 90-turn tool-calling analyst loop with native function calling. The model is the report's author and inspects the target itself (decompile, emulate, decrypt, audit, rules, regions, 8051, and more), writing an Executive Overview, Target Summary, Architecture Analysis, Recovered Secrets, Indicators of Compromise, and Recommendations. A grounding validator flags any quotation not backed by engine evidence.
 - **Deterministic Offline Fallback.** With no AI API key, REA runs completely offline, generating comprehensive deterministic technical reports with zero network requests.
 - **Firmware & Filesystems.** U-Boot legacy images (`uImage`), SquashFS 4.0 root filesystems, embedded Linux partitions, and raw microcontroller firmware.
 - **Formats.** PE (EXE/DLL/SYS), ELF, Mach-O, universal binaries, firmware bundles, and raw ARM Cortex-M images.

@@ -17,3 +17,4 @@ rust-fs-squashfs = "0.4.0"
 rust-fs-core = "0.3.10"
 memchr = "2"
 serde_json.workspace = true
+miniz_oxide = "0.9.1"

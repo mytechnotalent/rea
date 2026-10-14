@@ -59,6 +59,9 @@ pub enum Format {
     /// Raw ARM Cortex-M firmware image (headerless, vector table at offset 0).
     CortexM,
 
+    /// Raw ARM-mode firmware with a boot preamble.
+    ArmFirmware,
+
     /// U-Boot legacy image container.
     UImage,
 
@@ -111,7 +114,7 @@ const SIGNATURES: [(&[u8], Format); 18] = [
 ];
 
 /// Human-readable format names.
-const LABELS: [(Format, &str); 19] = [
+const LABELS: [(Format, &str); 20] = [
     (Format::Pe, "Portable Executable (PE)"),
     (Format::Elf, "Executable and Linkable Format (ELF)"),
     (Format::MachO, "Mach-O"),
@@ -122,6 +125,7 @@ const LABELS: [(Format, &str); 19] = [
     (Format::Script, "Script"),
     (Format::Pdf, "PDF document"),
     (Format::CortexM, "Raw ARM Cortex-M firmware"),
+    (Format::ArmFirmware, "Raw ARM firmware"),
     (Format::UImage, "U-Boot legacy image (uImage)"),
     (Format::Squashfs, "SquashFS filesystem"),
     (Format::Asar, "Electron Archive (ASAR)"),
@@ -191,8 +195,75 @@ fn check_fallback(bytes: &[u8], format: Format) -> Format {
         Format::Unknown if is_cortex_m(bytes) => Format::CortexM,
         Format::Unknown if is_asar(bytes) => Format::Asar,
         Format::Unknown if crate::plist::is_xml_plist(bytes) => Format::Plist,
+        Format::Unknown if arm_entry(bytes).is_some() => Format::ArmFirmware,
         _ => format,
     }
+}
+
+/// Locates the ARM-mode boot preamble of a raw firmware image.
+///
+/// An ARM reset preamble sets a processor mode and stack for each mode with a
+/// repeated `mov r0, #imm` / `msr cpsr` pair, so the first such pair marks the
+/// start of executable code.
+///
+/// # Arguments
+///
+/// * `bytes` - Whole target file.
+///
+/// # Returns
+///
+/// The byte offset of the boot code, or `None`.
+#[must_use]
+pub fn arm_entry(bytes: &[u8]) -> Option<usize> {
+    let limit = bytes.len().min(0x400);
+    (0..limit).step_by(4).find(|offset| is_arm_boot(bytes, *offset))
+}
+
+/// Reports whether ARM boot code begins at an offset.
+///
+/// # Arguments
+///
+/// * `bytes` - Whole target file.
+/// * `offset` - Candidate 4-byte-aligned offset.
+///
+/// # Returns
+///
+/// `true` for a `mov r0, #imm` followed by two or more `msr cpsr` words.
+fn is_arm_boot(bytes: &[u8], offset: usize) -> bool {
+    let Some(first) = le_u32(bytes, offset) else {
+        return false;
+    };
+    let pairs = (1..8)
+        .filter_map(|i| le_u32(bytes, offset + i * 4))
+        .filter(|w| is_msr_cpsr(*w))
+        .count();
+    is_mov_imm(first) && pairs >= 2
+}
+
+/// Reports whether a word is an unconditional `mov r0, #imm`.
+///
+/// # Arguments
+///
+/// * `word` - Instruction word.
+///
+/// # Returns
+///
+/// `true` for the `mov r0, #imm` encoding.
+fn is_mov_imm(word: u32) -> bool {
+    word >> 28 == 0xE && (word & 0x0FE0_0000) == 0x03A0_0000
+}
+
+/// Reports whether a word is a `msr cpsr, rN` instruction.
+///
+/// # Arguments
+///
+/// * `word` - Instruction word.
+///
+/// # Returns
+///
+/// `true` for the conditional `msr cpsr` encoding.
+fn is_msr_cpsr(word: u32) -> bool {
+    word >> 28 == 0xE && (word & 0x0FFF_FFF0) == 0x0121_F000
 }
 
 /// Reports whether a buffer is an Electron ASAR archive.

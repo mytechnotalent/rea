@@ -34,6 +34,7 @@ use rea_engine::{
     decompile,
     disasm::{DataEntry, Disassembly, Function},
     insights::KeyFunction,
+    model::Arch,
     narrative::{self, Evidence},
     Analysis,
 };
@@ -70,9 +71,10 @@ strings resolved in comments.";
 
 /// Note placed above the full walkthrough.
 const WALKTHROUGH_NOTE: &str =
-    "Observed: complete disassembly of every recovered function. Each function shows the full \
-raw assembler listing first, followed by a plain-language summary of what the function actually \
-does, and dual code/data analysis of any embedded literal pools.";
+    "Observed: the complete assembler for every recovered function is written to \
+    re-<name>.asm. This section breaks down the largest recovered functions: the raw listing, a \
+    plain-language summary of what the function does, and dual code/data analysis of any \
+    embedded literal pools.";
 
 /// Data pool table columns.
 const DATA_HEADERS: [&str; 5] = [
@@ -88,6 +90,12 @@ const DECOMP_CAP: usize = 200;
 
 /// Most functions per report rendered as recovered pseudo-C.
 const DECOMP_LIMIT: usize = 64;
+
+/// Most functions rendered in the assembly walkthrough.
+const WALKTHROUGH_FUNCTIONS: usize = 16;
+
+/// Most raw instructions listed per walkthrough function.
+const RAW_CAP: usize = 160;
 
 /// Builds the code analysis and key function sections.
 ///
@@ -299,10 +307,21 @@ fn append_pseudocode(section: Section, analysis: &Analysis, address: u64) -> Sec
 fn decompiled(analysis: &Analysis, address: u64) -> Option<String> {
     let binary = analysis.binary.as_ref()?;
     let func = analysis.disassembly.as_ref()?.functions.get(&address)?;
-    if func.instructions > DECOMP_CAP {
-        return None;
-    }
-    Some(decompile(func, binary.arch))
+    decompilable(binary.arch, func).then(|| decompile(func, binary.arch))
+}
+
+/// Reports whether a function may be rendered as pseudo-C.
+///
+/// # Arguments
+///
+/// * `arch` - Target architecture.
+/// * `func` - Function to check.
+///
+/// # Returns
+///
+/// `true` for supported, small functions.
+fn decompilable(arch: Arch, func: &Function) -> bool {
+    matches!(arch, Arch::X86 | Arch::X86_64) && func.instructions <= DECOMP_CAP
 }
 
 /// Appends pseudo-C for a walkthrough function when it is selected.
@@ -359,8 +378,8 @@ fn walkthrough(analysis: &Analysis, code: &Disassembly) -> Section {
     let section = walkthrough_heading();
     let ev = build_walkthrough_evidence(analysis, code);
     let selected = decompile_targets(code);
-    let funcs = sorted_functions(code);
-    funcs.into_iter().fold(section, |s, f| {
+    let funcs = sorted_functions(code).into_iter().take(WALKTHROUGH_FUNCTIONS);
+    funcs.fold(section, |s, f| {
         with_function_walkthrough(s, analysis, ev.as_ref(), code, f, &selected)
     })
 }
@@ -470,8 +489,28 @@ fn append_raw_listing(section: Section, func: &Function) -> Section {
     if func.lines.is_empty() {
         return section;
     }
-    let listing: Vec<String> = func.lines.iter().map(format_line).collect();
+    let listing = raw_lines(func);
     section.with(Block::Code(listing.join("\n")))
+}
+
+/// Renders a function's raw listing within the per-function cap.
+///
+/// # Arguments
+///
+/// * `func` - Function whose listing is rendered.
+///
+/// # Returns
+///
+/// The listing lines, with an omission note when capped.
+fn raw_lines(func: &Function) -> Vec<String> {
+    let mut lines: Vec<String> = func.lines.iter().take(RAW_CAP).map(format_line).collect();
+    if func.lines.len() > RAW_CAP {
+        lines.push(format!(
+            "... {} more instructions; see re-<name>.asm",
+            func.lines.len() - RAW_CAP
+        ));
+    }
+    lines
 }
 
 /// Formats one raw assembler line with its address.

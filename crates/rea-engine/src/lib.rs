@@ -94,6 +94,9 @@ mod elf;
 /// Raw Cortex-M firmware loader.
 mod firmware;
 
+/// Raw ARM-mode firmware loader.
+mod armfw;
+
 /// U-Boot legacy image loader.
 mod uimage;
 
@@ -157,6 +160,15 @@ pub mod dwarf;
 /// YARA-subset signature matching.
 pub mod yara;
 
+/// Target region segmentation and crypto classification.
+pub mod regions;
+
+/// Raw firmware ELF wrapper for external analysis engines.
+pub mod elfwrap;
+
+/// Intel 8051 (MCS-51) disassembly.
+pub mod i8051;
+
 /// Windows PDB (MSF) container parsing.
 pub mod pdb;
 
@@ -205,6 +217,7 @@ pub use discover::Finding;
 pub use dos::{format_dos_summary, is_dos_exe, parse_dos, DosHeader};
 pub use dotnet::{format_dotnet_summary, parse_dotnet_metadata, DotNetAssemblyRef, DotNetMetadata};
 pub use dwarf::{format_dwarf_summary, parse_dwarf, DwarfInfo};
+pub use elfwrap::{wrap_arm, Wrapped};
 pub use emulate::{Emulation, Stop};
 pub use error::EngineError;
 pub use evm::{decode_hex, format_evm_summary, is_hex_text, parse_evm, EvmBytecode};
@@ -213,12 +226,14 @@ pub use forensics::{
     all_exploit_chains, all_vulnerabilities, format_findings_json, ExploitChain, Vulnerability,
 };
 pub use go::{format_go_summary, parse_go_metadata, GoMetadata, GoModule};
+pub use i8051::disassemble as disassemble_8051;
 pub use jvm::{format_java_summary, is_class, parse_class, JavaClass};
 pub use netcap::{format_har_summary, format_pcap_summary, is_har, is_pcap, parse_har, parse_pcap};
 pub use pdb::{format_pdb_summary, is_pdb, parse_pdb, PdbInfo};
 pub use plist::{
     analyze_bundle, format_bundle_summary, format_plist_summary, is_plist, parse_plist,
 };
+pub use regions::{format_regions, segment as segment_regions, Region, RegionKind};
 pub use sourcemap::{
     decode_mappings, find_source_map_url, format_sourcemap_summary, is_source_map, parse_sourcemap,
     SourceSegment,

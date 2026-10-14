@@ -160,6 +160,112 @@ pub fn disassemble(binary: &Binary, bytes: &[u8]) -> Option<Disassembly> {
     Some(walker.result)
 }
 
+/// Produces a complete assembler listing of every executable region.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+/// * `bytes` - Whole target file.
+/// * `max` - Maximum instructions to list.
+///
+/// # Returns
+///
+/// One formatted line per instruction.
+#[must_use]
+pub fn full_listing(binary: &Binary, bytes: &[u8], max: usize) -> Vec<String> {
+    let Some((decoder, code)) = decoder_and_code(binary, bytes) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (start, data) in code.regions() {
+        sweep_region(&decoder, &code, *start, data.len(), max, &mut out);
+    }
+    out
+}
+
+/// Builds a decoder and code map for a binary.
+///
+/// # Arguments
+///
+/// * `binary` - Parsed executable.
+/// * `bytes` - Whole target file.
+///
+/// # Returns
+///
+/// The decoder and code map, or `None` when the architecture is unsupported.
+fn decoder_and_code<'a>(binary: &Binary, bytes: &'a [u8]) -> Option<(Disassembler, CodeMap<'a>)> {
+    let decoder = Disassembler::new(sleigh_arch(binary)?).ok()?;
+    Some((decoder, CodeMap::new(binary, bytes)))
+}
+
+/// Linearly sweeps one executable region into the listing.
+///
+/// # Arguments
+///
+/// * `decoder` - Instruction decoder.
+/// * `code` - Executable regions.
+/// * `start` - Region start address.
+/// * `len` - Region length in bytes.
+/// * `max` - Maximum instructions to list.
+/// * `out` - Accumulated lines.
+fn sweep_region(
+    decoder: &Disassembler,
+    code: &CodeMap,
+    start: u64,
+    len: usize,
+    max: usize,
+    out: &mut Vec<String>,
+) {
+    let interworking = decoder.interworking();
+    let end = start.saturating_add(len as u64);
+    let mut address = start;
+    while address < end && out.len() < max {
+        address = step_region(decoder, code, interworking, address, out);
+    }
+}
+
+/// Decodes and appends one region instruction, returning the next address.
+///
+/// # Arguments
+///
+/// * `decoder` - Instruction decoder.
+/// * `code` - Executable regions.
+/// * `interworking` - Whether bit 0 selects Thumb mode.
+/// * `address` - Instruction address.
+/// * `out` - Accumulated lines.
+///
+/// # Returns
+///
+/// The next instruction address.
+fn step_region(
+    decoder: &Disassembler,
+    code: &CodeMap,
+    interworking: bool,
+    address: u64,
+    out: &mut Vec<String>,
+) -> u64 {
+    match decoder.decode(address, code.bytes_at(address)) {
+        Some(line) => {
+            out.push(format_line(address, &line, interworking, &no_note));
+            address.saturating_add(line.len as u64)
+        }
+        None => address.saturating_add(1),
+    }
+}
+
+/// Returns no annotation for a referenced address.
+///
+/// # Arguments
+///
+/// * `_address` - Referenced address.
+///
+/// # Returns
+///
+/// Always `None`.
+fn no_note(_address: u64) -> Option<String> {
+    None
+}
+
 /// Renders a linear instruction listing for a non-x86 function.
 ///
 /// # Arguments

@@ -27,7 +27,9 @@
 //! SOFTWARE.
 
 // Import crate items
-use crate::{detect::Format, elf, error::EngineError, firmware, macho, model::Binary, pe, uimage};
+use crate::{
+    armfw, detect::Format, elf, error::EngineError, firmware, macho, model::Binary, pe, uimage,
+};
 
 /// Dispatches raw or container firmware loaders.
 ///
@@ -46,6 +48,7 @@ use crate::{detect::Format, elf, error::EngineError, firmware, macho, model::Bin
 fn load_firmware(bytes: &[u8], format: Format) -> Option<Result<Binary, EngineError>> {
     match format {
         Format::CortexM => Some(firmware::parse(bytes)),
+        Format::ArmFirmware => Some(armfw::parse(bytes)),
         Format::UImage => Some(uimage::parse(bytes)),
         _ => None,
     }

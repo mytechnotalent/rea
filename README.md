@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.4.0
+# Reverse Engineering Assistant (REA) v5.4.1
 
 Autonomous Reverse Engineering Framework
 
@@ -18,16 +18,14 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.4.0
+# New in v5.4.1
 
-REA v5.4.0 redesigns the report into a nation-state-grade intelligence assessment, authored end to end by the LLM and verified before anything ships.
+REA v5.4.1 guarantees no unverified claim ships in a report or dossier:
 
-- **Report authored by the analyst.** The report now leads with the AI narrative: BLUF, Target Identification & Provenance, Capability Assessment (with confidence), Behavioral Analysis, Function Analysis, Network/C2/IOCs, Secrets & Cryptography, Vulnerabilities, Anti-Analysis, Attribution, and Confidence & Limitations. The deterministic engine findings move to an **Evidence Appendix**.
-- **Verification (always on).** Every cited address and quoted string must exist in the engine evidence; proven reports carry a `[Verification]` banner and unproven citations are flagged.
-- **Adversarial review + adjudication (`REA_VERIFY=1`).** Independent reviewers attempt to falsify each claim against the evidence, and an adjudicator rewrites the report to remove anything unsupported. Tune with `REA_REVIEWERS`.
-- **Decompiler accuracy.** Fixed ARM memory-operand handling: `ldrb r3,[r3,#0]` decompiles to `r3 = *(r3)` (not `r3 = [r3`), `str` correctly orders memory as the destination, and `.w`/`.n` width-suffixed instructions lift.
-- **Presentation.** The Function Analysis section summarizes each ranked function in plain English with its call graph; raw instruction streams live in the `.asm` artifact.
-- **MCP parity.** The MCP server adds `disasm_function` and `classify_regions` (33 tools), and `generate_dossier` produces the same redesigned report.
+- **No unverified claim ships.** The verifier now iterates: any cited address or string that is not found in the engine evidence is sent back to the analyst, which must prove it with the tools or remove it. After the proof rounds (`REA_VERIFY_ROUNDS`), any line still citing an unproven token is deterministically removed, so the shipped report contains only evidence-backed citations.
+- **Reliable failover.** The default analyst chain is exactly `deepseek/deepseek-v4.1-flash` and, if that model is unavailable, `openrouter/free`. A defunct free-model slug was removed so REA no longer wastes a call on it. Override the chain with `REA_FALLBACK_MODELS`.
+- **Case-insensitive verification.** Cited addresses and strings are matched case-insensitively, removing false "unverified" flags.
+- **Env documentation.** `.env.example` documents every analyst knob: the model chain, `REA_MAX_TOKENS`, `REA_AGENT_BUDGET_SECS`, `REA_VERIFY`, `REA_REVIEWERS`, `REA_VERIFY_ROUNDS`, and `REA_LOAD_BASE`.
 
 # Features
 

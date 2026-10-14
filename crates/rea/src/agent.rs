@@ -46,10 +46,7 @@ use crate::tools::{self, ToolContext};
 const DEFAULT_MODEL: &str = "deepseek/deepseek-v4.1-flash";
 
 /// Fallback models tried when the primary model is unavailable.
-const FALLBACK_MODELS: [&str; 2] = [
-    "deepseek/deepseek-v4.1-flash:free",
-    "nvidia/nemotron-3.5-lightning:free",
-];
+const FALLBACK_MODELS: [&str; 1] = ["openrouter/free"];
 
 /// System prompt for the autonomous tool-using analyst agent.
 const AGENT_PROMPT: &str = "You are a principal reverse engineering analyst writing a \
@@ -141,8 +138,14 @@ const TOOL_SPECS: [(&str, &str); 12] = [
     ),
 ];
 
-/// Maximum unverified quotations listed in the verification note.
-const GROUNDING_LIMIT: usize = 8;
+/// Maximum proof rounds the verifier runs before redacting.
+const VERIFY_ROUNDS: usize = 3;
+
+/// Prompt that asks the analyst to prove or remove unverified citations.
+const PROVE_PROMPT: &str = "These citations could not be proven against the evidence: {list}. Use \
+the tools to find evidence that proves each one and add it, or remove or rewrite any claim that \
+cannot be proven, so the report contains only supported statements. Then output the corrected \
+full report.";
 
 /// Banner prepended to a report whose citations are all proven.
 const VERIFIED_NOTE: &str =
@@ -766,6 +769,31 @@ fn review_count() -> usize {
     std::env::var("REA_REVIEWERS").ok().and_then(|s| s.parse().ok()).unwrap_or(2)
 }
 
+/// Resolves the proof-round count from `REA_VERIFY_ROUNDS`.
+///
+/// # Returns
+///
+/// The configured count, defaulting to [`VERIFY_ROUNDS`].
+fn verify_rounds() -> usize {
+    std::env::var("REA_VERIFY_ROUNDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(VERIFY_ROUNDS)
+}
+
+/// Builds the proof-round prompt for unverified citations.
+///
+/// # Arguments
+///
+/// * `bad` - Unverified citations.
+///
+/// # Returns
+///
+/// The prompt text.
+fn prove_prompt(bad: &[String]) -> String {
+    PROVE_PROMPT.replace("{list}", &bad.join("; "))
+}
+
 /// Reads a string field from a JSON value.
 ///
 /// # Arguments
@@ -887,7 +915,24 @@ impl Session {
         session
     }
 
-    /// Runs an adversarial adjudication pass, falling back to the draft.
+    /// Verifies the report, proving or removing every unproven citation.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `ctx` - Tool context.
+    /// * `draft` - Author's draft report.
+    ///
+    /// # Returns
+    ///
+    /// The verified report.
+    fn verify(&mut self, key: &str, ctx: &ToolContext<'_>, draft: String) -> String {
+        let audited = self.audit(key, draft);
+        let iterated = self.iterate(key, ctx, audited);
+        redact(&iterated, &self.seen)
+    }
+
+    /// Runs the adversarial reviewers and adjudicator when enabled.
     ///
     /// # Arguments
     ///
@@ -896,14 +941,52 @@ impl Session {
     ///
     /// # Returns
     ///
-    /// The verified report.
-    fn adjudicate(&self, key: &str, draft: &str) -> String {
+    /// The corrected report.
+    fn audit(&self, key: &str, draft: String) -> String {
         if !verify_enabled() {
-            return ground(draft, &self.seen);
+            return draft;
         }
-        let findings = self.review_all(key, draft);
-        let final_text = self.settle(key, draft, &findings);
-        ground(&final_text, &self.seen)
+        let findings = self.review_all(key, &draft);
+        self.settle(key, &draft, &findings)
+    }
+
+    /// Re-runs proof turns until citations are verified or the budget is spent.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `ctx` - Tool context.
+    /// * `text` - Current report text.
+    ///
+    /// # Returns
+    ///
+    /// The best report text reached.
+    fn iterate(&mut self, key: &str, ctx: &ToolContext<'_>, mut text: String) -> String {
+        for _ in 0..verify_rounds() {
+            let bad = unverified(&text, &self.seen);
+            if bad.is_empty() {
+                return text;
+            }
+            text = self.prove(key, ctx, &bad).unwrap_or(text);
+        }
+        text
+    }
+
+    /// Runs one tool-enabled turn to prove or remove unverified citations.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - API key.
+    /// * `ctx` - Tool context.
+    /// * `bad` - Unverified citations.
+    ///
+    /// # Returns
+    ///
+    /// The corrected report when the model replies, or `None` when it called tools.
+    fn prove(&mut self, key: &str, ctx: &ToolContext<'_>, bad: &[String]) -> Option<String> {
+        push_user(&mut self.messages, &prove_prompt(bad));
+        let message = self.ask(key, true)?;
+        self.finish(&message, ctx)
     }
 
     /// Runs every adversarial reviewer over the draft.
@@ -1239,9 +1322,10 @@ fn final_report(message: &serde_json::Value) -> Option<String> {
     (!content.trim().is_empty()).then_some(content)
 }
 
-/// Verifies report citations against the evidence corpus.
+/// Enforces the verification guarantee on a report.
 ///
-/// Every cited address and quoted string must exist in the engine evidence.
+/// Any line still citing an unproven address or string is removed, so the
+/// shipped report contains only evidence-backed citations.
 ///
 /// # Arguments
 ///
@@ -1250,14 +1334,32 @@ fn final_report(message: &serde_json::Value) -> Option<String> {
 ///
 /// # Returns
 ///
-/// The report with a verification note appended.
-fn ground(text: &str, seen: &str) -> String {
+/// The banner-prefixed report, or the redacted report with a removal note.
+fn redact(text: &str, seen: &str) -> String {
     let bad = unverified(text, seen);
     if bad.is_empty() {
         return format!("{VERIFIED_NOTE}{text}");
     }
-    let note = format!("{} unverified citation(s): {}", bad.len(), sample(&bad));
-    format!("{text}\n\n[Verification] {note}")
+    let kept = keep_lines(text, &bad);
+    let note = format!("[Verification] Removed {} unverified claim(s) that could not be proven against the engine evidence.", bad.len());
+    format!("{kept}\n\n{note}")
+}
+
+/// Removes lines that cite any unproven token.
+///
+/// # Arguments
+///
+/// * `text` - Report text.
+/// * `bad` - Unproven citations.
+///
+/// # Returns
+///
+/// The remaining report text.
+fn keep_lines(text: &str, bad: &[String]) -> String {
+    let needles: Vec<String> =
+        bad.iter().map(|t| t.trim_start_matches("0x").to_lowercase()).collect();
+    let keep = |line: &&str| !needles.iter().any(|n| line.to_lowercase().contains(n.as_str()));
+    text.lines().filter(keep).collect::<Vec<_>>().join("\n")
 }
 
 /// Selects report citations absent from the evidence corpus.
@@ -1271,24 +1373,26 @@ fn ground(text: &str, seen: &str) -> String {
 ///
 /// The unverified citations.
 fn unverified(text: &str, seen: &str) -> Vec<String> {
+    let haystack = seen.to_lowercase();
     let mut tokens = quotes(text);
     tokens.extend(addresses(text));
-    tokens.retain(|token| !proven(seen, token));
+    tokens.retain(|token| !present(&haystack, token));
     tokens
 }
 
-/// Reports whether a citation exists in the evidence corpus.
+/// Reports whether a citation exists in a lowercased corpus.
 ///
 /// # Arguments
 ///
-/// * `seen` - Evidence dossier plus tool observations.
+/// * `haystack` - Lowercased evidence corpus.
 /// * `token` - Cited address or string.
 ///
 /// # Returns
 ///
 /// `true` when the token is present in the corpus.
-fn proven(seen: &str, token: &str) -> bool {
-    seen.contains(token) || seen.contains(token.trim_start_matches("0x"))
+fn present(haystack: &str, token: &str) -> bool {
+    let needle = token.trim_start_matches("0x").to_lowercase();
+    haystack.contains(&needle)
 }
 
 /// Collects hexadecimal addresses cited in report text.
@@ -1309,19 +1413,6 @@ fn addresses(text: &str) -> Vec<String> {
         }
     }
     out
-}
-
-/// Builds a bounded comma-separated sample of strings.
-///
-/// # Arguments
-///
-/// * `items` - Source strings.
-///
-/// # Returns
-///
-/// The sampled, joined text.
-fn sample(items: &[String]) -> String {
-    items.iter().take(GROUNDING_LIMIT).cloned().collect::<Vec<_>>().join(", ")
 }
 
 /// Collects double-quoted tokens from report text.
@@ -1354,7 +1445,7 @@ fn run_loop(key: &str, ctx: &ToolContext<'_>, evidence: &str, corpus: &str) -> O
     let mut session = Session::new(evidence, corpus, models());
     let deadline = Instant::now() + ai_budget();
     let draft = session.run(key, ctx, deadline).or_else(|| session.finalize(key))?;
-    Some(session.adjudicate(key, &draft))
+    Some(session.verify(key, ctx, draft))
 }
 
 /// Resolves the analyst wall-clock budget from `REA_AGENT_BUDGET_SECS`.
@@ -1459,18 +1550,21 @@ mod tests {
         assert_eq!(tool_arg(&function), "0x40");
     }
 
-    /// Verifies grounding flags quotations absent from evidence.
+    /// Verifies redaction removes lines citing unproven strings.
     #[test]
-    fn test_ground_flags_unverified() {
-        let text = "Recovered flag \"ABC_FAKE_FLAG\" from data.";
-        assert!(ground(text, "nothing here").contains("unverified"));
+    fn test_redact_removes_unverified() {
+        let text = "Line one is fine.\nFlag \"ABC_FAKE_FLAG\" here.\nLine three is fine.";
+        let out = redact(text, "nothing here");
+        assert!(out.contains("unverified"));
+        assert!(!out.contains("ABC_FAKE_FLAG"));
+        assert!(out.contains("Line one is fine."));
     }
 
-    /// Verifies grounding accepts quotations present in evidence.
+    /// Verifies redaction keeps a report whose citations are all proven.
     #[test]
-    fn test_ground_accepts_evidence() {
+    fn test_redact_keeps_proven() {
         let text = "Recovered flag \"REAL_FLAG\" from data.";
-        assert!(!ground(text, "the REAL_FLAG lives here").contains("unverified"));
+        assert!(!redact(text, "the REAL_FLAG lives here").contains("unverified"));
     }
 
     /// Verifies tool definitions expose one schema per spec.

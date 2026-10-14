@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v5.4.0
+**Current release:** v5.4.1
 **Document owner:** Kevin Thomas
 
 ---
@@ -48,6 +48,7 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.3.0 | Firmware container decoding + load-base re-basing (`REA_LOAD_BASE`), analyst dedupe/no-progress stop, full-string grounding, instruction-annotation accuracy fixes. |
 | v5.3.1 | Fix silent AI failure (missing `max_tokens` caused HTTP 402); add `disasm` tool (function listing + call graph + strings); richer evidence; behavior-forcing prompt; surface API errors; automatic model failover. |
 | v5.4.0 | Nation-state report redesign: LLM authors the full intelligence assessment (BLUF, capability/behavior/function analysis, attribution), deterministic findings become an Evidence Appendix, always-on citation verification plus adversarial reviewers and an adjudicator (`REA_VERIFY`). |
+| v5.4.1 | Reliable model failover (`deepseek/deepseek-v4.1-flash` -> `openrouter/free`), case-insensitive citation verification, and documented analyst env knobs. |
 
 ---
 

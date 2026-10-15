@@ -723,7 +723,7 @@ fn select_function<'a>(
 ) -> Option<&'a Function> {
     symbol.map_or_else(
         || a.key_functions.first().and_then(|key| code.functions.get(&key.address)),
-        |name| code.functions.values().find(|func| matches_function(func, name)),
+        |name| code.functions.values().find(|func| matches_function(code, func, name)),
     )
 }
 
@@ -731,14 +731,15 @@ fn select_function<'a>(
 ///
 /// # Arguments
 ///
+/// * `code` - Recovered code structure.
 /// * `func` - Function to test.
 /// * `target` - Function name or hex address.
 ///
 /// # Returns
 ///
 /// `true` when the function matches.
-fn matches_function(func: &Function, target: &str) -> bool {
-    if func.name.as_deref() == Some(target) {
+fn matches_function(code: &Disassembly, func: &Function, target: &str) -> bool {
+    if func.name.as_deref() == Some(target) || code.name_of(func.address) == target {
         return true;
     }
     parse_address(target) == Some(func.address)
@@ -908,13 +909,49 @@ fn call_javascript(s: &ServerSession) -> String {
 ///
 /// Summary of generated dossier files.
 fn format_dossier_paths(p: &crate::paths::ReportPaths) -> String {
-    format!(
-        "Dossier generated:\nReport: {}\nPDF: {}\nAnalysis: {}\nRecord: {}",
-        p.markdown.display(),
-        p.pdf.display(),
-        p.analysis_pdf.display(),
-        p.record_pdf.display()
-    )
+    let mut lines = vec!["Dossier generated:".to_string()];
+    core_paths(&mut lines, p);
+    aux_paths(&mut lines, p);
+    lines.join("\n")
+}
+
+/// Appends the core report files that exist on disk.
+///
+/// # Arguments
+///
+/// * `lines` - Accumulated output lines.
+/// * `p` - Generated report paths.
+fn core_paths(lines: &mut Vec<String>, p: &crate::paths::ReportPaths) {
+    push_existing(lines, "Report", &p.markdown);
+    push_existing(lines, "PDF", &p.pdf);
+    push_existing(lines, "JSON", &p.json);
+    push_existing(lines, "ASM", &p.asm);
+}
+
+/// Appends the firmware auxiliary files that exist on disk.
+///
+/// # Arguments
+///
+/// * `lines` - Accumulated output lines.
+/// * `p` - Generated report paths.
+fn aux_paths(lines: &mut Vec<String>, p: &crate::paths::ReportPaths) {
+    push_existing(lines, "Analysis", &p.analysis_md);
+    push_existing(lines, "Analysis PDF", &p.analysis_pdf);
+    push_existing(lines, "Record", &p.record_md);
+    push_existing(lines, "Record PDF", &p.record_pdf);
+}
+
+/// Appends one label and path when the file exists.
+///
+/// # Arguments
+///
+/// * `lines` - Accumulated output lines.
+/// * `label` - File label.
+/// * `path` - Candidate path.
+fn push_existing(lines: &mut Vec<String>, label: &str, path: &Path) {
+    if path.exists() {
+        lines.push(format!("{label}: {}", path.display()));
+    }
 }
 
 /// Runs full dossier pipeline.
@@ -1535,5 +1572,23 @@ mod tests {
         install_file(&path, "new");
         assert!(dir.join("SKILL.bak").exists());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+    }
+
+    /// Verifies decompile accepts the synthesized `sub_<addr>` name.
+    #[test]
+    fn test_matches_synthesized_name() {
+        let mut code = Disassembly::default();
+        code.functions.insert(0x1000, Function::at(0x1000, None));
+        let func = &code.functions[&0x1000];
+        assert!(matches_function(&code, func, "sub_1000"));
+        assert!(matches_function(&code, func, "0x1000"));
+        assert!(!matches_function(&code, func, "sub_2000"));
+    }
+
+    /// Verifies the dossier summary lists only files that exist.
+    #[test]
+    fn test_dossier_paths_only_existing() {
+        let lines = format_dossier_paths(&crate::paths::ReportPaths::default());
+        assert_eq!(lines, "Dossier generated:");
     }
 }

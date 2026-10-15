@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.6.3
+# Reverse Engineering Assistant (REA) v5.6.4
 
 **The reverse-engineering framework you can run anywhere, with nothing installed, and actually trust.**
 
@@ -18,11 +18,12 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.6.3
+# New in v5.6.4
 
-REA v5.6.3 sharpens the project's positioning:
+REA v5.6.4 fixes two MCP tool issues reported in #1 and #2:
 
-- **New tagline.** REA is "the reverse-engineering framework you can run anywhere, with nothing installed, and actually trust" — highlighting the pure-Rust, zero-dependency, verifiable core.
+- **`decompile_function` accepts `sub_<addr>` names.** A function requested by the exact label that `list_functions` prints (for example `sub_140005f2c`) now resolves, instead of only accepting the bare hex address.
+- **`generate_dossier` reports what it wrote.** The dossier summary now lists only the files that actually exist on disk and includes the `.json` and `.asm`, instead of naming firmware PDFs that were never created.
 
 # Features
 

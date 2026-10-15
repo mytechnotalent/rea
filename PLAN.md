@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v5.6.3
+**Current release:** v5.6.4
 **Document owner:** Kevin Thomas
 
 ---
@@ -54,6 +54,7 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.6.1 | Report formatting/accuracy: preserve fenced code one instruction per line, `0x`/hex deterministic listings, and hedge the loop heuristic. |
 | v5.6.2 | Fix overlapping text in PDF tables: long tokens wrap inside constrained columns. |
 | v5.6.3 | New tagline positioning the pure-Rust, zero-dependency, verifiable core. |
+| v5.6.4 | MCP fix: `decompile_function` resolves `sub_<addr>` names; `generate_dossier` summary lists only files written (incl. `.json`/`.asm`). |
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v5.6.4
+**Current release:** v6.0.0
 **Document owner:** Kevin Thomas
 
 ---
@@ -55,6 +55,28 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.6.2 | Fix overlapping text in PDF tables: long tokens wrap inside constrained columns. |
 | v5.6.3 | New tagline positioning the pure-Rust, zero-dependency, verifiable core. |
 | v5.6.4 | MCP fix: `decompile_function` resolves `sub_<addr>` names; `generate_dossier` summary lists only files written (incl. `.json`/`.asm`). |
+
+---
+
+## 3b. v6.0.0 — Audit-Grade Evidence
+
+**Theme:** every finding is addressable, reproducible, and re-verifiable — offline, with nothing
+installed. This turns the tagline into a capability.
+
+**Shipped:**
+
+1. **Evidence bundle.** `rea-engine::evidence` builds a canonical `re-<name>.evidence.json` (schema
+   version 1) with target identity, coverage facts, explicit unknowns, and one item per finding
+   (capabilities, indicators, rules, vulnerabilities, crypto constants, key functions). Every item
+   carries a **content-addressed identifier** (`ev_<16 hex>`, SHA-256 of kind|subject|detail|address)
+   and a confidence level.
+2. **`rea evidence <file>`** writes the bundle beside the target; the one-shot writes it too.
+3. **`rea verify <bundle.json>`** re-checks every identifier against its content offline and detects
+   tampering (nonzero exit on mismatch).
+4. **Bundle diff.** `rea diff <a.evidence.json> <b.evidence.json>` reports added, removed, and shared
+   items by identity; non-bundle inputs fall back to the binary differential.
+5. **MCP `get_evidence_bundle`** returns the active target's bundle as JSON (35 tools).
+6. **Report tie-in.** The Coverage & Limitations section points to the bundle and `rea verify`.
 
 ---
 

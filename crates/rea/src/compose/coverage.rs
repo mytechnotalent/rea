@@ -38,6 +38,10 @@ use rea_report::Section;
 // Import crate::compose::text
 use crate::compose::text;
 
+/// Note appended to the coverage section describing the evidence bundle.
+const BUNDLE_NOTE: &str = "An audit-grade evidence bundle (`re-<name>.evidence.json`) lists every \
+finding with a stable content-addressed ID and can be checked offline with `rea verify`.";
+
 /// Builds the coverage and limitations section.
 ///
 /// # Arguments
@@ -68,7 +72,7 @@ fn coverage_note(analysis: &Analysis, bytes: &[u8]) -> String {
     push_truncation(&mut items, analysis);
     push_encrypted(&mut items, bytes);
     push_header(&mut items, analysis);
-    format!("{} {}", analyzed(analysis), summarize(&items))
+    format!("{} {} {BUNDLE_NOTE}", analyzed(analysis), summarize(&items))
 }
 
 /// Describes what was analyzed.

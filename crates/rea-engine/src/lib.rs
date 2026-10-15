@@ -64,6 +64,9 @@ pub mod entropy;
 /// Engine error type.
 pub mod error;
 
+/// Audit-grade evidence bundles.
+pub mod evidence;
+
 /// Cryptographic file fingerprints.
 pub mod hashes;
 

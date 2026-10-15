@@ -38,6 +38,8 @@ pub struct ReportPaths {
     pub pdf: PathBuf,
     /// Machine-readable report JSON path.
     pub json: PathBuf,
+    /// Audit-grade evidence bundle path.
+    pub evidence: PathBuf,
     /// Full assembler listing path.
     pub asm: PathBuf,
     /// Threat dossier markdown path.
@@ -69,12 +71,28 @@ pub struct ReportPaths {
 ///
 /// Initialized report paths.
 fn base_paths(d: &Path, stem: &str) -> ReportPaths {
+    let mut paths = main_paths(d, stem);
+    paths.findings = d.join("findings.json");
+    paths
+}
+
+/// Builds the primary report and artifact paths.
+///
+/// # Arguments
+///
+/// * `d` - Parent directory.
+/// * `stem` - File name stem.
+///
+/// # Returns
+///
+/// Report paths with the core files set.
+fn main_paths(d: &Path, stem: &str) -> ReportPaths {
     ReportPaths {
         markdown: d.join(format!("re-{stem}.md")),
         pdf: d.join(format!("re-{stem}.pdf")),
         json: d.join(format!("re-{stem}.json")),
+        evidence: d.join(format!("re-{stem}.evidence.json")),
         asm: d.join(format!("re-{stem}.asm")),
-        findings: d.join("findings.json"),
         ..Default::default()
     }
 }

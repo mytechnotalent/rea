@@ -53,6 +53,8 @@ usage:
   rea strings <file>          extract printable strings and security indicators
   rea decompile <file> [sym]  decompile target or function into pseudo-C
   rea diff <a> <b>            differentially compare two targets
+  rea evidence <file>         write an audit-grade evidence bundle
+  rea verify <bundle.json>    verify an evidence bundle's integrity
   rea xrefs <file> <addr>     query cross-references to address or symbol
   rea analyze <file>          alias for one-shot analysis
 
@@ -322,8 +324,38 @@ fn dispatch_inspect7(cmd: &str, rest: &[String]) -> Option<ExitCode> {
     match cmd {
         "provider" => Some(dispatch_provider(rest)),
         "diff" => Some(dispatch_diff(rest)),
+        "evidence" => Some(dispatch_evidence(rest)),
+        "verify" => Some(dispatch_verify(rest)),
         _ => None,
     }
+}
+
+/// Dispatches the evidence bundle subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_evidence(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::evidence_cmd(Path::new(t)))
+}
+
+/// Dispatches the evidence verification subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_verify(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::verify_cmd(Path::new(t)))
 }
 
 /// Dispatches the differential comparison subcommand.
@@ -1104,7 +1136,31 @@ pub fn run(target: &Path) -> Result<ReportPaths, CliError> {
 /// Returns [`CliError::Write`] when a file cannot be written.
 fn write_artifacts(paths: &ReportPaths, analysis: &Analysis, bytes: &[u8]) -> Result<(), CliError> {
     write_json(paths, analysis, bytes)?;
+    write_evidence(paths, analysis, bytes)?;
     write_asm(paths, analysis, bytes)
+}
+
+/// Writes the audit-grade evidence bundle.
+///
+/// # Arguments
+///
+/// * `paths` - Output paths.
+/// * `analysis` - Analysis results.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// Unit when successful.
+///
+/// # Errors
+///
+/// Returns [`CliError::Write`] when the file cannot be written.
+fn write_evidence(paths: &ReportPaths, analysis: &Analysis, bytes: &[u8]) -> Result<(), CliError> {
+    let bundle = rea_engine::evidence::build(analysis, bytes);
+    write(
+        &paths.evidence,
+        rea_engine::evidence::to_json(&bundle).as_bytes(),
+    )
 }
 
 /// Writes the machine-readable JSON report.

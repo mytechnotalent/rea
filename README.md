@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v5.6.4
+# Reverse Engineering Assistant (REA) v6.0.0
 
 **The reverse-engineering framework you can run anywhere, with nothing installed, and actually trust.**
 
@@ -18,12 +18,16 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v5.6.4
+# New in v6.0.0
 
-REA v5.6.4 fixes two MCP tool issues reported in #1 and #2:
+REA v6.0.0 makes every finding addressable, reproducible, and re-verifiable — offline, with nothing installed.
 
-- **`decompile_function` accepts `sub_<addr>` names.** A function requested by the exact label that `list_functions` prints (for example `sub_140005f2c`) now resolves, instead of only accepting the bare hex address.
-- **`generate_dossier` reports what it wrote.** The dossier summary now lists only the files that actually exist on disk and includes the `.json` and `.asm`, instead of naming firmware PDFs that were never created.
+- **Evidence bundle.** Every one-shot writes `re-<name>.evidence.json`: a versioned, canonical bundle with target identity, coverage, explicit unknowns, and one item per finding — each with a **content-addressed ID** (`ev_<hex>`) and a confidence level.
+- **`rea evidence <file>`** writes the bundle on demand.
+- **`rea verify <bundle.json>`** re-checks every identifier against its content offline and detects tampering.
+- **Bundle diff.** `rea diff` compares two evidence bundles by identity (added / removed / shared items).
+- **MCP `get_evidence_bundle`.** Returns the active target's bundle as JSON (35 tools).
+- **Report tie-in.** The Coverage & Limitations section references the bundle and `rea verify`.
 
 # Features
 

@@ -211,7 +211,8 @@ fn tool_catalog() -> Value {
 /// JSON array of comparison tool declarations.
 fn diff_tools() -> Value {
     json!([
-        {"name": "compare_binaries", "description": "Differentially compares two targets: added and removed imports, strings, capabilities, rules, and crypto constants.", "inputSchema": {"type": "object", "properties": {"path_a": {"type": "string"}, "path_b": {"type": "string"}}, "required": ["path_a", "path_b"]}}
+        {"name": "compare_binaries", "description": "Differentially compares two targets: added and removed imports, strings, capabilities, rules, and crypto constants.", "inputSchema": {"type": "object", "properties": {"path_a": {"type": "string"}, "path_b": {"type": "string"}}, "required": ["path_a", "path_b"]}},
+        {"name": "get_evidence_bundle", "description": "Returns the audit-grade evidence bundle for the active target as JSON (addressable, content-addressed items plus coverage and unknowns).", "inputSchema": {"type": "object"}}
     ])
 }
 
@@ -343,25 +344,43 @@ fn dispatch_tool(s: &mut ServerSession, name: &str, args: &Value) -> String {
         .or_else(|| dispatch_runtime_tool(s, name))
         .or_else(|| dispatch_analysis_tool(s, name, args))
         .or_else(|| dispatch_format_tool(s, name))
-        .or_else(|| dispatch_diff_tool(name, args))
+        .or_else(|| dispatch_diff_tool(s, name, args))
         .unwrap_or_else(|| dispatch_adv_tool(s, name, args))
 }
 
-/// Dispatches differential-comparison tools.
+/// Dispatches differential-comparison and evidence tools.
 ///
 /// # Arguments
 ///
+/// * `s` - Active server session.
 /// * `name` - Tool name.
 /// * `args` - Tool argument object.
 ///
 /// # Returns
 ///
 /// Result string if matched, otherwise `None`.
-fn dispatch_diff_tool(name: &str, args: &Value) -> Option<String> {
+fn dispatch_diff_tool(s: &ServerSession, name: &str, args: &Value) -> Option<String> {
     match name {
         "compare_binaries" => Some(call_compare(args)),
+        "get_evidence_bundle" => Some(call_evidence(s)),
         _ => None,
     }
+}
+
+/// Returns the active target's evidence bundle as JSON.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// The evidence bundle JSON.
+fn call_evidence(s: &ServerSession) -> String {
+    let (Some(analysis), Some(bytes)) = (&s.active, &s.bytes) else {
+        return "No target opened. Call `open_binary` first.".to_string();
+    };
+    rea_engine::evidence::to_json(&rea_engine::evidence::build(analysis, bytes))
 }
 
 /// Compares two targets named in the arguments.
@@ -1541,7 +1560,7 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 34);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 35);
     }
 
     /// Verifies runtime tool handlers reject empty sessions.

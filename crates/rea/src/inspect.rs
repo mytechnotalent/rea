@@ -1231,6 +1231,39 @@ pub fn regions_cmd(path: &Path) -> ExitCode {
 /// Exit code.
 #[must_use]
 pub fn diff_cmd(a: &Path, b: &Path) -> ExitCode {
+    if let Some(text) = bundle_diff(a, b) {
+        print!("{text}");
+        return ExitCode::SUCCESS;
+    }
+    binary_diff(a, b)
+}
+
+/// Diffs two evidence bundles when both inputs are bundles.
+///
+/// # Arguments
+///
+/// * `a` - First input path.
+/// * `b` - Second input path.
+///
+/// # Returns
+///
+/// The diff text, or `None` when either input is not a bundle.
+fn bundle_diff(a: &Path, b: &Path) -> Option<String> {
+    let (a_text, b_text) = (fs::read_to_string(a).ok()?, fs::read_to_string(b).ok()?);
+    rea_engine::evidence::diff(&a_text, &b_text).map(|d| rea_engine::evidence::format_diff(&d))
+}
+
+/// Differentially compares two binary targets.
+///
+/// # Arguments
+///
+/// * `a` - First target path.
+/// * `b` - Second target path.
+///
+/// # Returns
+///
+/// Exit code.
+fn binary_diff(a: &Path, b: &Path) -> ExitCode {
     let (Some((first, a_bytes)), Some((second, b_bytes))) = (load(a), load(b)) else {
         eprintln!("rea diff: failed to analyze one or both targets");
         return ExitCode::FAILURE;
@@ -1297,6 +1330,125 @@ fn stem_of(path: &Path) -> String {
         || "target".to_string(),
         |s| s.to_string_lossy().into_owned(),
     )
+}
+
+/// Writes an audit-grade evidence bundle beside the target.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn evidence_cmd(path: &Path) -> ExitCode {
+    let Some((analysis, bytes)) = load(path) else {
+        eprintln!("rea evidence: failed to analyze target");
+        return ExitCode::FAILURE;
+    };
+    let bundle = rea_engine::evidence::build(&analysis, &bytes);
+    write_evidence(path, &bundle);
+    ExitCode::SUCCESS
+}
+
+/// Writes the bundle and prints a summary.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+/// * `bundle` - Evidence bundle.
+fn write_evidence(path: &Path, bundle: &rea_engine::evidence::Bundle) {
+    let out = evidence_path(path);
+    let _ = fs::write(&out, rea_engine::evidence::to_json(bundle));
+    println!(
+        "Evidence bundle: {} ({} items, {} unknowns)",
+        out.display(),
+        bundle.items.len(),
+        bundle.unknowns.len()
+    );
+}
+
+/// Builds the evidence bundle path beside a target.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The bundle path.
+fn evidence_path(path: &Path) -> PathBuf {
+    let dir = path.parent().unwrap_or_else(|| Path::new(""));
+    dir.join(format!("re-{}.evidence.json", stem_of(path)))
+}
+
+/// Verifies an evidence bundle's integrity.
+///
+/// # Arguments
+///
+/// * `path` - Bundle JSON path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn verify_cmd(path: &Path) -> ExitCode {
+    let Ok(text) = fs::read_to_string(path) else {
+        eprintln!("rea verify: failed to read bundle");
+        return ExitCode::FAILURE;
+    };
+    verify_text(&text)
+}
+
+/// Verifies bundle text and prints the outcome.
+///
+/// # Arguments
+///
+/// * `text` - Bundle JSON.
+///
+/// # Returns
+///
+/// Exit code.
+fn verify_text(text: &str) -> ExitCode {
+    match rea_engine::evidence::verify(text) {
+        Ok(report) => finish_verify(&report),
+        Err(error) => {
+            eprintln!("rea verify: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Prints a verification report and returns its status.
+///
+/// # Arguments
+///
+/// * `report` - Verification report.
+///
+/// # Returns
+///
+/// Exit code.
+fn finish_verify(report: &rea_engine::evidence::VerifyReport) -> ExitCode {
+    print_verify(report);
+    if report.tampered.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// Prints a verification report.
+///
+/// # Arguments
+///
+/// * `report` - Verification report.
+fn print_verify(report: &rea_engine::evidence::VerifyReport) {
+    let (items, verified, tampered) = (report.items, report.verified, report.tampered.len());
+    println!(
+        "schema_version: {}\nitems: {items}\nverified: {verified}\ntampered: {tampered}",
+        report.schema_version
+    );
 }
 
 /// Disassembles an 8051 (MCS-51) firmware region.

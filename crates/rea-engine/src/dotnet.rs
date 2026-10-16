@@ -55,6 +55,9 @@ pub struct DotNetMetadata {
     pub methods: Vec<String>,
     /// Stream names present in the assembly.
     pub streams: Vec<String>,
+
+    /// Referenced assemblies from the `AssemblyRef` table.
+    pub references: Vec<DotNetAssemblyRef>,
 }
 
 /// Finds the offset of a byte needle in a buffer.
@@ -393,6 +396,7 @@ pub fn parse_dotnet_metadata(bytes: &[u8]) -> Option<DotNetMetadata> {
     let off = find_bytes(bytes, &BSJB_MAGIC)?;
     let mut meta = DotNetMetadata::default();
     parse_bsjb_root(bytes, off, &mut meta);
+    crate::dotnet_tables::recover_references(bytes, off, &mut meta);
     Some(meta)
 }
 
@@ -427,8 +431,9 @@ pub fn format_dotnet_summary(m: &DotNetMetadata) -> String {
     let ver = dotnet_runtime_ver(m);
     let (t, meth) = (m.type_count, m.method_count);
     let streams = m.streams.join(", ");
+    let refs = m.references.len();
     format!(
-        ".NET Runtime: {ver}\nDeclared Types: {t}\nDeclared Methods: {meth}\nStreams: {streams}\n"
+        ".NET Runtime: {ver}\nDeclared Types: {t}\nDeclared Methods: {meth}\nStreams: {streams}\nReferenced Assemblies: {refs}\n"
     )
 }
 

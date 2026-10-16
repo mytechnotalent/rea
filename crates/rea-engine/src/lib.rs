@@ -208,6 +208,9 @@ pub mod go;
 /// .NET ECMA-335 CLI managed assembly metadata extraction.
 pub mod dotnet;
 
+/// ECMA-335 metadata table walk for managed assembly references.
+mod dotnet_tables;
+
 /// Android DEX and APK package forensics.
 pub mod dex;
 

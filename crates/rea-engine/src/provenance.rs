@@ -304,6 +304,20 @@ fn from_dotnet(provenance: &mut Provenance, analysis: &Analysis) {
         provenance.toolchain = Some(format!(".NET CLR {}", dotnet.runtime_version));
     }
     push_main(provenance, &dotnet.assembly_name);
+    push_refs(provenance, &dotnet.references);
+}
+
+/// Pushes managed assembly reference components.
+///
+/// # Arguments
+///
+/// * `provenance` - Provenance to populate.
+/// * `refs` - Managed assembly references.
+fn push_refs(provenance: &mut Provenance, refs: &[crate::dotnet::DotNetAssemblyRef]) {
+    for reference in refs {
+        let item = component(&reference.name, &reference.version, ComponentKind::Library);
+        provenance.components.push(item);
+    }
 }
 
 /// Pushes the root application component when named.

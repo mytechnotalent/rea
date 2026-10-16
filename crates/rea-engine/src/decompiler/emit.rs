@@ -455,6 +455,25 @@ fn cond_block_tail<'a>(ctx: &Ctx<'a>, index: usize) -> &'a str {
         .map_or("", |l| l.asm.as_str())
 }
 
+/// Returns the assembly text of a condition block's penultimate line.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `index` - Block index.
+///
+/// # Returns
+///
+/// The penultimate line assembly text, or an empty string.
+fn cond_block_prev<'a>(ctx: &Ctx<'a>, index: usize) -> &'a str {
+    let block = &ctx.graph.blocks[index];
+    block
+        .end
+        .checked_sub(2)
+        .and_then(|i| ctx.lines.get(i))
+        .map_or("", |l| l.asm.as_str())
+}
+
 /// Appends a recovered if/else or if-then diamond.
 ///
 /// # Arguments
@@ -472,7 +491,9 @@ fn append_diamond(
     diamond: &Diamond,
 ) {
     append_statements(out, ctx, body_slice(ctx, index, true), index, level);
-    let cond = cond_guard(&diamond.cond, cond_block_tail(ctx, index));
+    let tail = cond_block_tail(ctx, index);
+    let prev = cond_block_prev(ctx, index);
+    let cond = cond_guard(&diamond.cond, tail, prev);
     out.push(format!("{}if ({cond}) {{", indent(level)));
     append_arm(out, ctx, diamond.then_block, level + 1);
     append_else(out, ctx, level, diamond);
@@ -619,7 +640,7 @@ fn statement(line: &Line, prev: &str, ctx: &Ctx<'_>, index: usize, level: usize)
 /// The indented statement.
 fn render_line(pad: &str, line: &Line, prev: &str, ctx: &Ctx<'_>, index: usize) -> String {
     let asm = &line.asm;
-    let body = control_text(&line.inst, prev, ctx, index);
+    let body = control_text(&line.inst, asm, prev, ctx, index);
     let text = body.unwrap_or_else(|| render_value(&line.inst));
     format!("{pad}{text}  // {asm}")
 }
@@ -635,11 +656,11 @@ fn render_line(pad: &str, line: &Line, prev: &str, ctx: &Ctx<'_>, index: usize) 
 /// # Returns
 ///
 /// The statement text, or `None` for non-control instructions.
-fn control_text(inst: &Inst, prev: &str, ctx: &Ctx<'_>, index: usize) -> Option<String> {
+fn control_text(inst: &Inst, asm: &str, prev: &str, ctx: &Ctx<'_>, index: usize) -> Option<String> {
     match inst {
         Inst::Ret => Some("return;".to_string()),
         Inst::Jump(target) => Some(jump_text(*target, ctx, index)),
-        Inst::JumpIf { cond, target } => Some(cond_text(cond, *target, prev, ctx, index)),
+        Inst::JumpIf { cond, target } => Some(cond_text(cond, *target, asm, prev, ctx, index)),
         _ => None,
     }
 }
@@ -674,15 +695,38 @@ fn jump_text(target: u64, ctx: &Ctx<'_>, index: usize) -> String {
 /// # Returns
 ///
 /// The statement text.
-fn cond_text(cond: &str, target: u64, prev: &str, ctx: &Ctx<'_>, index: usize) -> String {
-    let guard = cond_guard(cond, prev);
+fn cond_text(
+    cond: &str,
+    target: u64,
+    asm: &str,
+    prev: &str,
+    ctx: &Ctx<'_>,
+    index: usize,
+) -> String {
+    let guard = cond_guard(cond, asm, prev);
     if is_back_edge(target, ctx, index) {
         return format!("if ({guard}) continue;");
     }
     format!("if ({guard}) goto lbl_{target:x};")
 }
 
-/// Builds a condition, using the preceding compare when available.
+/// Builds a condition from a zero-test or a preceding compare.
+///
+/// # Arguments
+///
+/// * `cond` - Branch condition text.
+/// * `asm` - Branch instruction assembly.
+/// * `prev` - Preceding instruction assembly.
+///
+/// # Returns
+///
+/// The C condition expression.
+fn cond_guard(cond: &str, asm: &str, prev: &str) -> String {
+    let guard = zero_test(asm).or_else(|| compare_operand(cond, prev));
+    guard.unwrap_or_else(|| condition_expr(cond))
+}
+
+/// Builds a condition from the preceding compare operands.
 ///
 /// # Arguments
 ///
@@ -691,14 +735,28 @@ fn cond_text(cond: &str, target: u64, prev: &str, ctx: &Ctx<'_>, index: usize) -
 ///
 /// # Returns
 ///
-/// The C condition expression.
-fn cond_guard(cond: &str, prev: &str) -> String {
-    if is_operator(cond) {
-        if let Some(expr) = compare_guard(cond, prev) {
-            return expr;
-        }
+/// The condition, or `None`.
+fn compare_operand(cond: &str, prev: &str) -> Option<String> {
+    is_operator(cond).then(|| compare_guard(cond, prev)).flatten()
+}
+
+/// Builds a condition from a `cbz`/`cbnz` zero test.
+///
+/// # Arguments
+///
+/// * `asm` - Branch instruction assembly.
+///
+/// # Returns
+///
+/// The condition, or `None`.
+fn zero_test(asm: &str) -> Option<String> {
+    let (mnemonic, rest) = asm.split_once(char::is_whitespace)?;
+    let reg = rest.split(',').next()?.trim();
+    match mnemonic.to_ascii_lowercase().as_str() {
+        "cbz" => Some(format!("{reg} == 0")),
+        "cbnz" => Some(format!("{reg} != 0")),
+        _ => None,
     }
-    condition_expr(cond)
 }
 
 /// Reports whether a condition is a bare comparison operator.
@@ -882,7 +940,8 @@ mod tests {
         let zero = compare_guard("==", "test esi,esi");
         assert_eq!(less.as_deref(), Some("rax < rbx"));
         assert_eq!(zero.as_deref(), Some("esi == 0"));
-        assert_eq!(cond_guard("!=", "jne 0x1008"), "flags != 0");
+        assert_eq!(cond_guard("!=", "jne 0x1008", ""), "flags != 0");
+        assert_eq!(cond_guard("!=", "cbnz r3,0x1008", ""), "r3 != 0");
     }
 
     /// Builds a pre-tested loop header with an exit test.

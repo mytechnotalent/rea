@@ -200,7 +200,7 @@ mod tests {
     /// Verifies that clean data yields no hits.
     #[test]
     fn test_detect_clean() {
-        assert!(detect(b"no crypto constants present here at all").is_empty());
+        assert_eq!(detect(b"no crypto constants present here at all").len(), 0);
     }
 
     /// Verifies that the Blowfish P-array is detected.

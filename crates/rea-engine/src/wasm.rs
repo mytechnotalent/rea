@@ -601,7 +601,7 @@ mod tests {
     fn test_wasm_header() {
         let module = parse_wasm(&module_with(&[])).unwrap();
         assert_eq!(module.version, 1);
-        assert!(module.sections.is_empty());
+        assert_eq!(module.sections.len(), 0);
     }
 
     /// Verifies import section parsing.

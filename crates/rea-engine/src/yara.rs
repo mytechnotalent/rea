@@ -884,7 +884,7 @@ mod tests {
     fn test_yara_literal() {
         let rules = "rule pe { strings: $a = \"MZ\" condition: $a }";
         assert_eq!(scan(b"MZ\x90\x00payload", rules).len(), 1);
-        assert!(scan(b"no match here", rules).is_empty());
+        assert_eq!(scan(b"no match here", rules).len(), 0);
     }
 
     /// Verifies quantifier and negation conditions.
@@ -892,7 +892,7 @@ mod tests {
     fn test_yara_condition() {
         let rules = "rule r { strings: $a = \"one\" $b = \"two\" condition: all of them }";
         assert_eq!(scan(b"one and two", rules).len(), 1);
-        assert!(scan(b"only one", rules).is_empty());
+        assert_eq!(scan(b"only one", rules).len(), 0);
     }
 
     /// Verifies hex patterns with wildcards.
@@ -914,6 +914,6 @@ mod tests {
     fn test_yara_counts() {
         let rules = "rule c { strings: $a = \"x\" condition: #a > 2 }";
         assert_eq!(scan(b"x x x", rules).len(), 1);
-        assert!(scan(b"x x", rules).is_empty());
+        assert_eq!(scan(b"x x", rules).len(), 0);
     }
 }

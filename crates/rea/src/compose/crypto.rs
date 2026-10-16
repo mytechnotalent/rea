@@ -82,6 +82,6 @@ mod tests {
     /// Verifies that clean data yields no crypto section.
     #[test]
     fn test_sections_skip_clean_data() {
-        assert!(sections(b"no crypto constants here at all").is_empty());
+        assert_eq!(sections(b"no crypto constants here at all").len(), 0);
     }
 }

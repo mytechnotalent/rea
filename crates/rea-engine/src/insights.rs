@@ -707,6 +707,6 @@ mod tests {
     /// Verifies that analyses without code yield no key functions.
     #[test]
     fn test_rank_without_code_is_empty() {
-        assert!(rank(&Analysis::default(), &[]).is_empty());
+        assert_eq!(rank(&Analysis::default(), &[]).len(), 0);
     }
 }

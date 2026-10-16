@@ -157,6 +157,6 @@ mod tests {
     #[test]
     fn test_with_facts_skips_empty() {
         let section = with_facts(Section::new("S"), None);
-        assert!(section.blocks.is_empty());
+        assert_eq!(section.blocks.len(), 0);
     }
 }

@@ -93,6 +93,6 @@ mod tests {
     #[test]
     fn test_sections_skip_clean_data() {
         let analysis = rea_engine::analyze("blob", b"no sinks here");
-        assert!(sections(&analysis).is_empty());
+        assert_eq!(sections(&analysis).len(), 0);
     }
 }

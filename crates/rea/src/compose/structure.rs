@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn test_sections_skip_data() {
         let analysis = rea_engine::analyze("x.bin", b"abc");
-        assert!(sections(&analysis).is_empty());
+        assert_eq!(sections(&analysis).len(), 0);
     }
 
     /// Verifies that writable code is flagged.

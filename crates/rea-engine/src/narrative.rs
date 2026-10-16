@@ -1175,7 +1175,7 @@ mod tests {
     fn test_program_story_empty() {
         let a = Analysis::default();
         let story = program_story(&a);
-        assert!(story.is_empty());
+        assert_eq!(story.len(), 0);
     }
 
     /// Tests detailed program story with empty analysis.
@@ -1183,7 +1183,7 @@ mod tests {
     fn test_detailed_story_empty() {
         let a = Analysis::default();
         let detailed = detailed_program_story(&a);
-        assert!(detailed.boot.is_empty());
+        assert_eq!(detailed.boot.len(), 0);
     }
 
     /// Tests PE boot and storage narrative generation.

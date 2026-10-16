@@ -278,7 +278,7 @@ mod tests {
     /// Verifies that fonts are embedded and loadable.
     #[test]
     fn test_bundled_fonts_are_present() {
-        assert!(!bundled_fonts().is_empty());
+        assert_ne!(bundled_fonts().len(), 0);
     }
 
     /// Verifies that a full report document compiles.

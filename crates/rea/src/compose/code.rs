@@ -706,7 +706,7 @@ mod tests {
     /// Verifies that data files produce no code sections.
     #[test]
     fn test_sections_skip_data() {
-        assert!(sections(&rea_engine::analyze("x", b"abc")).is_empty());
+        assert_eq!(sections(&rea_engine::analyze("x", b"abc")).len(), 0);
     }
 
     /// Verifies that function analysis renders when disassembly exists.

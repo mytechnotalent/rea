@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_sections_empty_when_no_firmware() {
         let analysis = Analysis::default();
-        assert!(sections(&analysis).is_empty());
+        assert_eq!(sections(&analysis).len(), 0);
     }
 
     /// Constructs an analysis populated with test firmware data.

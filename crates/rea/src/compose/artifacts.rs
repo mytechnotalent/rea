@@ -297,7 +297,10 @@ mod tests {
     /// Verifies that plain data yields no artifact sections.
     #[test]
     fn test_artifacts_skip_plain_data() {
-        assert!(sections(&analysis(), b"plain data with no artifacts").is_empty());
+        assert_eq!(
+            sections(&analysis(), b"plain data with no artifacts").len(),
+            0
+        );
     }
 
     /// Verifies that a WebAssembly module adds a section.

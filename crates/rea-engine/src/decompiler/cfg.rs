@@ -390,7 +390,7 @@ mod tests {
     fn test_build_return_block() {
         let body = vec![line(0x1000, Inst::Ret)];
         let graph = build(&body);
-        assert!(graph.blocks[0].succ.is_empty());
+        assert_eq!(graph.blocks[0].succ.len(), 0);
         assert!(graph.blocks[0].returns);
     }
 

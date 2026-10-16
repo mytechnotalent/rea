@@ -573,6 +573,6 @@ mod tests {
         let triage = parse(&build_test_asar()).expect("parsed");
         assert_eq!(triage.file_count, 2);
         assert_eq!(triage.app_name.as_deref(), Some("test-app"));
-        assert!(!triage.warnings.is_empty());
+        assert_ne!(triage.warnings.len(), 0);
     }
 }

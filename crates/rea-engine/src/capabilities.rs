@@ -394,7 +394,7 @@ mod tests {
     /// Verifies that benign imports yield no capabilities.
     #[test]
     fn test_classify_ignores_benign() {
-        assert!(classify(&[import("GetLastError")]).is_empty());
+        assert_eq!(classify(&[import("GetLastError")]).len(), 0);
     }
 
     /// Verifies category lookup with leading underscores.

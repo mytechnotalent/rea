@@ -99,7 +99,7 @@ mod tests {
         let data = [1u8, 2, 3, 4];
         assert_eq!(window(&data, 1, 2), &[2, 3]);
         assert_eq!(window(&data, 3, 10), &[4]);
-        assert!(window(&data, 9, 1).is_empty());
+        assert_eq!(window(&data, 9, 1).len(), 0);
     }
 
     /// Verifies lossless round trips between offset types.

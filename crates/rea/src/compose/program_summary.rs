@@ -140,6 +140,6 @@ mod tests {
     fn test_sections_empty() {
         let a = Analysis::default();
         let s = sections(&a);
-        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
     }
 }

@@ -87,6 +87,6 @@ mod tests {
     /// Verifies that a flat image yields no container section.
     #[test]
     fn test_container_section_skips_flat_image() {
-        assert!(sections(b"plain data").is_empty());
+        assert_eq!(sections(b"plain data").len(), 0);
     }
 }

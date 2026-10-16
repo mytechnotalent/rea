@@ -483,7 +483,7 @@ mod tests {
         let b = crate::analyze("a.bin", b"GET /x HTTP/1.1");
         let c = compare(&a, &b, b"GET /x HTTP/1.1", b"GET /x HTTP/1.1");
         assert!(c.identical);
-        assert!(c.added_strings.is_empty());
+        assert_eq!(c.added_strings.len(), 0);
     }
 
     /// Verifies a new string is reported as added.

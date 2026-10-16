@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v6.0.1
+# Reverse Engineering Assistant (REA) v6.0.2
 
 **The reverse-engineering framework you can run anywhere, with nothing installed, and actually trust.**
 
@@ -18,11 +18,11 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v6.0.1
+# New in v6.0.2
 
-REA v6.0.1 fixes the CI gate:
+REA v6.0.2 makes the CI gate pass on clippy 1.99:
 
-- **CI green.** The `xtask` convention checker's tests asserted emptiness with `assert!(… .is_empty())`, which a newer clippy flags; they now use `assert_eq!(…, Vec::new())`. No behavior change.
+- **Empty-collection assertions.** Test assertions now use `assert_eq!(… .len(), 0)` / `assert_ne!(… .len(), 0)` instead of `assert!(… .is_empty())`, which the newer `clippy::assert_is_empty` pedantic lint rejects. No behavior change.
 
 # Features
 

@@ -1660,7 +1660,7 @@ mod tests {
     /// Verifies model fallback default.
     #[test]
     fn test_model_name_default() {
-        assert!(!model_name().is_empty());
+        assert_ne!(model_name().len(), 0);
     }
 
     /// Verifies evidence assembly includes identity facts.

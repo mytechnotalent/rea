@@ -961,7 +961,7 @@ mod tests {
         assert_eq!(bundle.schema_version, SCHEMA_VERSION);
         let report = verify(&to_json(&bundle)).unwrap();
         assert_eq!(report.items, report.verified);
-        assert!(report.tampered.is_empty());
+        assert_eq!(report.tampered.len(), 0);
     }
 
     /// Verifies tampering is detected.

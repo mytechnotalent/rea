@@ -254,13 +254,13 @@ mod tests {
     /// Verifies a one-character prefix is rejected as too short.
     #[test]
     fn test_tokens_rejects_short_prefix() {
-        assert!(tokens(b"a{bc}").is_empty());
+        assert_eq!(tokens(b"a{bc}").len(), 0);
     }
 
     /// Verifies a non-printable body is rejected.
     #[test]
     fn test_tokens_rejects_binary_body() {
-        assert!(tokens(b"AB{a\x00b}").is_empty());
+        assert_eq!(tokens(b"AB{a\x00b}").len(), 0);
     }
 
     /// Verifies the sub-slice search matches and rejects correctly.

@@ -406,7 +406,7 @@ mod tests {
         let rows = vec![vec!["1".to_string()], vec!["2".to_string()]];
         let (table, omitted) = capped(&["N"], rows, 1);
         assert_eq!((table.rows.len(), omitted), (1, 1));
-        assert!(with_omission(Section::new("S"), 0, "row").blocks.is_empty());
+        assert_eq!(with_omission(Section::new("S"), 0, "row").blocks.len(), 0);
     }
 
     /// Verifies clipping and hex formatting.

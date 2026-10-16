@@ -155,7 +155,7 @@ mod tests {
     /// Verifies no section appears when emulation did not run.
     #[test]
     fn test_section_absent_without_emulation() {
-        assert!(sections(&with_emulation(None)).is_empty());
+        assert_eq!(sections(&with_emulation(None)).len(), 0);
     }
 
     /// Builds an emulation outcome with one recovered string.

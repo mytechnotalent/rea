@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v6.0.1
+**Current release:** v6.0.2
 **Document owner:** Kevin Thomas
 
 ---
@@ -57,6 +57,7 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.6.4 | MCP fix: `decompile_function` resolves `sub_<addr>` names; `generate_dossier` summary lists only files written (incl. `.json`/`.asm`). |
 | v6.0.0 | Audit-grade evidence: content-addressed bundles (`rea evidence`), offline `rea verify`, bundle diff, MCP `get_evidence_bundle`, and a CI gate. |
 | v6.0.1 | Fix the CI gate (`xtask` test lint). |
+| v6.0.2 | CI green on clippy 1.99: test assertions use `.len()` instead of `is_empty()`. |
 
 ---
 

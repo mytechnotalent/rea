@@ -841,6 +841,6 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("r0".to_string(), "r1".to_string());
         map.insert("r1".to_string(), "r0".to_string());
-        assert!(!resolve(&map, "r0").is_empty());
+        assert_ne!(resolve(&map, "r0").len(), 0);
     }
 }

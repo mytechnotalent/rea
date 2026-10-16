@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_file_signal_threshold() {
         assert_eq!(file_signal(7.9).len(), 1);
-        assert!(file_signal(6.0).is_empty());
+        assert_eq!(file_signal(6.0).len(), 0);
     }
 
     /// Verifies entry placement explanations.

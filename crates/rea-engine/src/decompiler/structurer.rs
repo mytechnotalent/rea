@@ -879,7 +879,7 @@ mod tests {
     fn test_analyze_no_loop() {
         let lines = vec![line(0x1000, Inst::Ret)];
         let structure = analyze(&build(&lines), &lines);
-        assert!(structure.loops.is_empty());
+        assert_eq!(structure.loops.len(), 0);
     }
 
     /// Verifies that an if/else diamond is recovered.

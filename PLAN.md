@@ -2,7 +2,7 @@
 
 **Project:** Reverse Engineering Assistant (REA)
 **Repository:** `mytechnotalent/rea`
-**Current release:** v6.0.0
+**Current release:** v6.0.1
 **Document owner:** Kevin Thomas
 
 ---
@@ -55,11 +55,12 @@ agents (OpenCode, Claude Code, Cursor, Windsurf).
 | v5.6.2 | Fix overlapping text in PDF tables: long tokens wrap inside constrained columns. |
 | v5.6.3 | New tagline positioning the pure-Rust, zero-dependency, verifiable core. |
 | v5.6.4 | MCP fix: `decompile_function` resolves `sub_<addr>` names; `generate_dossier` summary lists only files written (incl. `.json`/`.asm`). |
+| v6.0.0 | Audit-grade evidence: content-addressed bundles (`rea evidence`), offline `rea verify`, bundle diff, MCP `get_evidence_bundle`, and a CI gate. |
+| v6.0.1 | Fix the CI gate (`xtask` test lint). |
 
 ---
 
 ## 3b. v6.0.0 — Audit-Grade Evidence
-
 **Theme:** every finding is addressable, reproducible, and re-verifiable — offline, with nothing
 installed. This turns the tagline into a capability.
 

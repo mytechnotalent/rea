@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v6.0.0
+# Reverse Engineering Assistant (REA) v6.0.1
 
 **The reverse-engineering framework you can run anywhere, with nothing installed, and actually trust.**
 
@@ -18,16 +18,11 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v6.0.0
+# New in v6.0.1
 
-REA v6.0.0 makes every finding addressable, reproducible, and re-verifiable — offline, with nothing installed.
+REA v6.0.1 fixes the CI gate:
 
-- **Evidence bundle.** Every one-shot writes `re-<name>.evidence.json`: a versioned, canonical bundle with target identity, coverage, explicit unknowns, and one item per finding — each with a **content-addressed ID** (`ev_<hex>`) and a confidence level.
-- **`rea evidence <file>`** writes the bundle on demand.
-- **`rea verify <bundle.json>`** re-checks every identifier against its content offline and detects tampering.
-- **Bundle diff.** `rea diff` compares two evidence bundles by identity (added / removed / shared items).
-- **MCP `get_evidence_bundle`.** Returns the active target's bundle as JSON (35 tools).
-- **Report tie-in.** The Coverage & Limitations section references the bundle and `rea verify`.
+- **CI green.** The `xtask` convention checker's tests asserted emptiness with `assert!(… .is_empty())`, which a newer clippy flags; they now use `assert_eq!(…, Vec::new())`. No behavior change.
 
 # Features
 

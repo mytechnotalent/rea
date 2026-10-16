@@ -157,7 +157,10 @@ mod tests {
     /// Verifies that a correct header passes.
     #[test]
     fn test_check_accepts_valid_header() {
-        assert!(check(Path::new("a.rs"), &sample("a.rs")).is_empty());
+        assert_eq!(
+            check(Path::new("a.rs"), &sample("a.rs")),
+            Vec::<String>::new()
+        );
     }
 
     /// Verifies that a header naming another file fails.

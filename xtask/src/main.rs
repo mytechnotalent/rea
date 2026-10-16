@@ -169,7 +169,7 @@ mod tests {
     fn test_xtask_sources_pass_conventions() {
         let root = workspace_root();
         let path = root.join("xtask").join("src").join("main.rs");
-        assert!(check_file(&root, &path).is_empty());
+        assert_eq!(check_file(&root, &path), Vec::<String>::new());
     }
 
     /// Verifies that an unknown task is reported as a failure.

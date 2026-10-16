@@ -283,7 +283,10 @@ mod tests {
     /// Verifies that a commented `use` passes.
     #[test]
     fn test_check_accepts_commented_import() {
-        assert!(check("// Import dependencies from std\nuse std::fs;\n").is_empty());
+        assert_eq!(
+            check("// Import dependencies from std\nuse std::fs;\n"),
+            Vec::<String>::new()
+        );
     }
 
     /// Verifies that functions without a tests module are reported.
@@ -296,7 +299,7 @@ mod tests {
     #[test]
     fn test_check_accepts_tests_module() {
         let src = "fn a() {}\n#[cfg(test)]\nmod tests {\n    // Import all\n    use super::*;\n}\n";
-        assert!(check(src).is_empty());
+        assert_eq!(check(src), Vec::<String>::new());
     }
 
     /// Verifies that an undocumented test is reported.

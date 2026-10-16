@@ -1462,11 +1462,11 @@ fn print_verify(report: &rea_engine::evidence::VerifyReport) {
 /// Exit code.
 #[must_use]
 pub fn sbom_cmd(path: &Path) -> ExitCode {
-    let Some((analysis, _bytes)) = load(path) else {
+    let Some((analysis, bytes)) = load(path) else {
         eprintln!("rea sbom: failed to analyze target");
         return ExitCode::FAILURE;
     };
-    write_sbom(path, &analysis);
+    write_sbom(path, &analysis, &bytes);
     ExitCode::SUCCESS
 }
 
@@ -1476,8 +1476,9 @@ pub fn sbom_cmd(path: &Path) -> ExitCode {
 ///
 /// * `path` - Target file path.
 /// * `analysis` - Completed analysis.
-fn write_sbom(path: &Path, analysis: &Analysis) {
-    let provenance = rea_engine::provenance::recover(analysis);
+/// * `bytes` - Raw target bytes.
+fn write_sbom(path: &Path, analysis: &Analysis, bytes: &[u8]) {
+    let provenance = rea_engine::provenance::recover_detailed(analysis, bytes);
     let json = rea_engine::sbom::cyclonedx(&analysis.name, env!("CARGO_PKG_VERSION"), &provenance);
     print!("{json}");
     let _ = fs::write(sbom_path(path), &json);

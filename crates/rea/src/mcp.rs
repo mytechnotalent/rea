@@ -382,7 +382,8 @@ fn call_sbom(s: &ServerSession) -> String {
     let Some(analysis) = &s.active else {
         return "No target opened. Call `open_binary` first.".to_string();
     };
-    let provenance = rea_engine::provenance::recover(analysis);
+    let bytes = s.bytes.as_deref().unwrap_or_default();
+    let provenance = rea_engine::provenance::recover_detailed(analysis, bytes);
     rea_engine::sbom::cyclonedx(&analysis.name, env!("CARGO_PKG_VERSION"), &provenance)
 }
 

@@ -29,6 +29,9 @@
 // Import dependencies from crate
 use crate::Analysis;
 
+// Import dependencies from serde_json
+use serde_json::Value;
+
 /// Kind of software component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComponentKind {
@@ -118,7 +121,69 @@ pub fn recover(analysis: &Analysis) -> Provenance {
 pub fn recover_detailed(analysis: &Analysis, bytes: &[u8]) -> Provenance {
     let mut provenance = recover(analysis);
     from_dwarf(&mut provenance, bytes);
+    from_auditable(&mut provenance, analysis, bytes);
     provenance
+}
+
+/// Recovers Rust `cargo-auditable` crate dependencies.
+///
+/// # Arguments
+///
+/// * `provenance` - Provenance to populate.
+/// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
+fn from_auditable(provenance: &mut Provenance, analysis: &Analysis, bytes: &[u8]) {
+    let Some(json) = auditable_json(analysis, bytes) else {
+        return;
+    };
+    parse_packages(provenance, &json);
+}
+
+/// Extracts and decompresses a `cargo-auditable` JSON document.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// The decompressed JSON, or `None`.
+fn auditable_json(analysis: &Analysis, bytes: &[u8]) -> Option<Vec<u8>> {
+    let binary = analysis.binary.as_ref()?;
+    let section = binary.sections.iter().find(|s| s.name.ends_with(".dep-v0"))?;
+    miniz_oxide::inflate::decompress_to_vec_zlib(section.data(bytes)).ok()
+}
+
+/// Parses recovered `cargo-auditable` package metadata.
+///
+/// # Arguments
+///
+/// * `provenance` - Provenance to populate.
+/// * `json` - Decompressed JSON document.
+fn parse_packages(provenance: &mut Provenance, json: &[u8]) {
+    let Ok(value) = serde_json::from_slice::<Value>(json) else {
+        return;
+    };
+    let Some(packages) = value.get("packages").and_then(Value::as_array) else {
+        return;
+    };
+    provenance.components.extend(packages.iter().filter_map(package_component));
+}
+
+/// Builds a library component from a `cargo-auditable` package object.
+///
+/// # Arguments
+///
+/// * `package` - Package JSON object.
+///
+/// # Returns
+///
+/// The component, or `None` when unnamed.
+fn package_component(package: &Value) -> Option<Component> {
+    let name = package.get("name").and_then(Value::as_str)?;
+    let version = package.get("version").and_then(Value::as_str).unwrap_or("");
+    Some(component(name, version, ComponentKind::Library))
 }
 
 /// Recovers a DWARF compilation directory as the build path.
@@ -433,6 +498,16 @@ mod tests {
         assert_eq!(pdb_path(&fact).as_deref(), Some(r"C:\app.pdb"));
         let other = crate::model::Fact::new("Rich header", "Present");
         assert_eq!(pdb_path(&other), None);
+    }
+
+    /// Verifies cargo-auditable package parsing.
+    #[test]
+    fn test_auditable_json() {
+        let json = br#"{"packages":[{"name":"libc","version":"0.2.190"}]}"#;
+        let mut provenance = Provenance::default();
+        parse_packages(&mut provenance, json);
+        assert_eq!(provenance.components.len(), 1);
+        assert_eq!(provenance.components[0].name, "libc");
     }
 
     /// Verifies DWARF compilation directory selection.

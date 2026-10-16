@@ -217,7 +217,7 @@ fn collect(analysis: &Analysis, bytes: &[u8]) -> Vec<Item> {
     push_rules(&mut items, analysis, bytes);
     push_vulns(&mut items, analysis);
     push_crypto(&mut items, bytes);
-    push_code(&mut items, analysis);
+    push_code(&mut items, analysis, bytes);
     items
 }
 
@@ -227,9 +227,10 @@ fn collect(analysis: &Analysis, bytes: &[u8]) -> Vec<Item> {
 ///
 /// * `items` - Accumulated items.
 /// * `analysis` - Completed analysis.
-fn push_code(items: &mut Vec<Item>, analysis: &Analysis) {
+/// * `bytes` - Raw target bytes.
+fn push_code(items: &mut Vec<Item>, analysis: &Analysis, bytes: &[u8]) {
     push_functions(items, analysis);
-    push_components(items, analysis);
+    push_components(items, analysis, bytes);
 }
 
 /// Appends recovered provenance-component evidence.
@@ -238,8 +239,10 @@ fn push_code(items: &mut Vec<Item>, analysis: &Analysis) {
 ///
 /// * `items` - Accumulated items.
 /// * `analysis` - Completed analysis.
-fn push_components(items: &mut Vec<Item>, analysis: &Analysis) {
-    for component in crate::provenance::recover(analysis).components.iter().take(ITEM_LIMIT) {
+/// * `bytes` - Raw target bytes.
+fn push_components(items: &mut Vec<Item>, analysis: &Analysis, bytes: &[u8]) {
+    let provenance = crate::provenance::recover_detailed(analysis, bytes);
+    for component in provenance.components.iter().take(ITEM_LIMIT) {
         items.push(medium("component", &component.name, &component.version));
     }
 }

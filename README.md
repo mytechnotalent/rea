@@ -4,7 +4,7 @@
 
 <br>
 
-# Reverse Engineering Assistant (REA) v6.0.2
+# Reverse Engineering Assistant (REA) v7.0.0
 
 **The reverse-engineering framework you can run anywhere, with nothing installed, and actually trust.**
 
@@ -18,11 +18,16 @@ Writes `re-suspect.md`, `re-suspect.pdf`, and `re-suspect.json` next to the targ
 
 <br>
 
-# New in v6.0.2
+# New in v7.0.0
 
-REA v6.0.2 makes the CI gate pass on clippy 1.99:
+REA v7.0.0 is **Understand & Trust** — a major release that reads the binary like an analyst and attributes where it came from. Everything stays pure Rust, offline, and feeds the addressable evidence bundle.
 
-- **Empty-collection assertions.** Test assertions now use `assert_eq!(… .len(), 0)` / `assert_ne!(… .len(), 0)` instead of `assert!(… .is_empty())`, which the newer `clippy::assert_is_empty` pedantic lint rejects. No behavior change.
+- **Decompiler quality.** Recovered pseudo-C now renders real conditions from the controlling `cmp`/`test` (`if (rbx < r8)`), hoists pre-tested loops into `while (cond)` instead of `while (true)`, renders `cbz`/`cbnz` as explicit zero tests (`if (r3 != 0)`), and casts widening loads to their true integer type (`eax = (uint16_t)*(r14)`).
+- **Call-graph summary.** The report gains a deterministic call-graph section: function and edge counts, the entry point, the most-called functions, leaf count, and recursion.
+- **Cross-format behavior.** WebAssembly modules, EVM bytecode, Java classes, managed .NET assemblies, and Go binaries each get a behavior summary in the report.
+- **Emulation depth.** The p-code emulator now also recovers runtime strings written to memory during execution, alongside flag-shaped tokens.
+- **Dependency recovery.** The SBOM now enumerates linked libraries, managed `AssemblyRef` dependencies with public-key tokens, Rust `cargo-auditable` crates, and Go modules.
+- **Provenance.** Toolchain, dependencies, and build environment (PDB and DWARF build paths) are attributed in a Provenance section and as `CycloneDX`/`SPDX` properties.
 
 # Features
 
@@ -33,6 +38,7 @@ REA v6.0.2 makes the CI gate pass on clippy 1.99:
 - **Firmware & Filesystems.** U-Boot legacy images (`uImage`), SquashFS 4.0 root filesystems, embedded Linux partitions, and raw microcontroller firmware.
 - **Formats.** PE (EXE/DLL/SYS), ELF, Mach-O, universal binaries, firmware bundles, and raw ARM Cortex-M images.
 - **Static Analysis.** Cryptographic hashes (MD5, SHA-1, SHA-256), import hashes (imphash), Shannon entropy, sections, memory layouts, imports, exports, and mitigations (ASLR, DEP/NX, CFG, PIE, RELRO, stack canaries).
+- **SBOM & Provenance.** `rea sbom <file>` emits `CycloneDX` and `SPDX` JSON; toolchain, libraries, managed assembly references, Rust `cargo-auditable` crates, and build paths (PDB/DWARF) are recovered offline and tied into the evidence bundle.
 - **Disassembly.** Recursive-descent function and call-graph recovery with inline symbol and string resolution and per-instruction semantics.
 - **P-Code Emulation.** Sandboxed software emulator executes target code without native host execution, unmasking runtime strings, keys, and decrypted payloads.
 - **Protectors & Packing.** High-entropy mapping, abnormal memory layouts, W^X violations, and signature matching for commercial protectors.

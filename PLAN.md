@@ -82,7 +82,7 @@ installed. This turns the tagline into a capability.
 
 ---
 
-## 3c. v7.0.0 — Understand & Trust (in progress)
+## 3c. v7.0.0 — Understand & Trust (released)
 
 **Theme:** one major with two pillars — understand what the binary *does*, and trust where it *came
 from*. Everything is pure Rust, offline, and feeds the addressable evidence bundle.

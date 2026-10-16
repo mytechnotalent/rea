@@ -49,7 +49,10 @@ use crate::compose::text;
 /// The section, or nothing when no provenance was recovered.
 pub fn sections(analysis: &Analysis) -> Vec<Section> {
     let provenance = recover(analysis);
-    if provenance.components.is_empty() && provenance.toolchain.is_none() {
+    if provenance.components.is_empty()
+        && provenance.toolchain.is_none()
+        && provenance.build_path.is_none()
+    {
         return Vec::new();
     }
     vec![Section::new("Provenance").with(text::paragraph(&note(&provenance)))]
@@ -66,11 +69,23 @@ pub fn sections(analysis: &Analysis) -> Vec<Section> {
 /// The note text.
 fn note(provenance: &Provenance) -> String {
     let mut parts = Vec::new();
-    if let Some(toolchain) = &provenance.toolchain {
-        parts.push(format!("toolchain {toolchain}"));
-    }
+    push_labeled(&mut parts, "toolchain", provenance.toolchain.as_deref());
+    push_labeled(&mut parts, "built at", provenance.build_path.as_deref());
     push_components(&mut parts, provenance);
     format!("Recovered build provenance: {}.", parts.join("; "))
+}
+
+/// Appends a labelled value when present.
+///
+/// # Arguments
+///
+/// * `parts` - Accumulated note parts.
+/// * `label` - Value label.
+/// * `value` - Value text.
+fn push_labeled(parts: &mut Vec<String>, label: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        parts.push(format!("{label} {value}"));
+    }
 }
 
 /// Appends the component summary.

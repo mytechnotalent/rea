@@ -90,9 +90,22 @@ fn metadata(name: &str, tool_version: &str, provenance: &Provenance) -> Value {
 ///
 /// The JSON array.
 fn properties(provenance: &Provenance) -> Value {
-    match &provenance.toolchain {
-        Some(toolchain) => json!([{"name": "toolchain", "value": toolchain}]),
-        None => Value::Array(Vec::new()),
+    let mut items = Vec::new();
+    push_property(&mut items, "toolchain", provenance.toolchain.as_deref());
+    push_property(&mut items, "build_path", provenance.build_path.as_deref());
+    Value::Array(items)
+}
+
+/// Appends a provenance property when a value is present.
+///
+/// # Arguments
+///
+/// * `items` - Accumulated properties.
+/// * `name` - Property name.
+/// * `value` - Property value.
+fn push_property(items: &mut Vec<Value>, name: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        items.push(json!({"name": name, "value": value}));
     }
 }
 
@@ -203,13 +216,24 @@ mod tests {
     ///
     /// The provenance.
     fn sample() -> Provenance {
+        let components = vec![component()];
         Provenance {
             toolchain: Some("go1.22".to_string()),
-            components: vec![Component {
-                name: "example/module".to_string(),
-                version: "v1.0.0".to_string(),
-                kind: crate::provenance::ComponentKind::Library,
-            }],
+            build_path: Some("/build/app".to_string()),
+            components,
+        }
+    }
+
+    /// Builds a sample library component.
+    ///
+    /// # Returns
+    ///
+    /// The component.
+    fn component() -> Component {
+        Component {
+            name: "example/module".to_string(),
+            version: "v1.0.0".to_string(),
+            kind: crate::provenance::ComponentKind::Library,
         }
     }
 

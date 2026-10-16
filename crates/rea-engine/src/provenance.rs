@@ -77,6 +77,9 @@ pub struct Provenance {
     /// Toolchain or runtime version, when known.
     pub toolchain: Option<String>,
 
+    /// Build-origin path from debug metadata, when known.
+    pub build_path: Option<String>,
+
     /// Recovered components.
     pub components: Vec<Component>,
 }
@@ -96,8 +99,39 @@ pub fn recover(analysis: &Analysis) -> Provenance {
     from_go(&mut provenance, analysis);
     from_dotnet(&mut provenance, analysis);
     from_imports(&mut provenance, analysis);
+    from_debug(&mut provenance, analysis);
     from_native(&mut provenance, analysis);
     provenance
+}
+
+/// Recovers the build-origin path from debug metadata.
+///
+/// # Arguments
+///
+/// * `provenance` - Provenance to populate.
+/// * `analysis` - Completed analysis.
+fn from_debug(provenance: &mut Provenance, analysis: &Analysis) {
+    let Some(binary) = &analysis.binary else {
+        return;
+    };
+    provenance.build_path = binary.facts.iter().find_map(pdb_path);
+}
+
+/// Extracts a PDB path from a debug-database fact.
+///
+/// # Arguments
+///
+/// * `fact` - Binary fact.
+///
+/// # Returns
+///
+/// The build path, or `None`.
+fn pdb_path(fact: &crate::model::Fact) -> Option<String> {
+    if fact.label != "Debug database (PDB)" {
+        return None;
+    }
+    let path = fact.value.split(" (GUID").next().unwrap_or("");
+    (!path.is_empty()).then(|| path.to_string())
 }
 
 /// Recovers linked library components from import metadata.
@@ -330,5 +364,28 @@ mod tests {
         push_library(&mut provenance, &mut seen, "KERNEL32.dll");
         push_library(&mut provenance, &mut seen, "KERNEL32.dll");
         assert_eq!(provenance.components.len(), 1);
+    }
+
+    /// Verifies PDB path extraction from a debug fact.
+    #[test]
+    fn test_pdb_path_strips_guid() {
+        let fact = debug_fact(r"C:\app.pdb");
+        assert_eq!(pdb_path(&fact).as_deref(), Some(r"C:\app.pdb"));
+        let other = crate::model::Fact::new("Rich header", "Present");
+        assert_eq!(pdb_path(&other), None);
+    }
+
+    /// Builds a synthetic debug-database fact.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - PDB path text.
+    ///
+    /// # Returns
+    ///
+    /// The fact.
+    fn debug_fact(path: &str) -> crate::model::Fact {
+        let value = format!("{path} (GUID abcd, age 3)");
+        crate::model::Fact::new("Debug database (PDB)", &value)
     }
 }

@@ -36,6 +36,8 @@ pub struct DotNetAssemblyRef {
     pub name: String,
     /// Assembly version.
     pub version: String,
+    /// Public key or token, hex-encoded, when present.
+    pub token: String,
 }
 
 /// Extracted .NET CLR metadata and type inventory.

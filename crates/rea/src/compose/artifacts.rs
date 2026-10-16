@@ -92,13 +92,26 @@ fn artifact_group_b(out: &mut Vec<Section>, bytes: &[u8]) {
 /// The note, or `None`.
 fn dotnet_note(bytes: &[u8]) -> Option<String> {
     let meta = rea_engine::dotnet::parse_dotnet_metadata(bytes)?;
-    Some(format!(
-        "Managed .NET assembly (runtime {}): {} types, {} methods, {} references.",
-        meta.runtime_version,
-        meta.type_count,
-        meta.method_count,
-        meta.references.len()
-    ))
+    let tail = refs_tail(&meta.references);
+    let text = format!(
+        "Managed .NET assembly (runtime {}): {} types, {} methods{tail}.",
+        meta.runtime_version, meta.type_count, meta.method_count
+    );
+    Some(text)
+}
+
+/// Summarizes assembly references and their public-key tokens.
+///
+/// # Arguments
+///
+/// * `refs` - Assembly references.
+///
+/// # Returns
+///
+/// The summary tail text.
+fn refs_tail(refs: &[rea_engine::dotnet::DotNetAssemblyRef]) -> String {
+    let tokens = refs.iter().filter(|r| !r.token.is_empty()).count();
+    format!(", {} references, {tokens} tokens", refs.len())
 }
 
 /// Builds the Go binary note.

@@ -104,6 +104,52 @@ pub fn recover(analysis: &Analysis) -> Provenance {
     provenance
 }
 
+/// Recovers build provenance, including debug-derived build paths.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// The recovered provenance.
+#[must_use]
+pub fn recover_detailed(analysis: &Analysis, bytes: &[u8]) -> Provenance {
+    let mut provenance = recover(analysis);
+    from_dwarf(&mut provenance, bytes);
+    provenance
+}
+
+/// Recovers a DWARF compilation directory as the build path.
+///
+/// # Arguments
+///
+/// * `provenance` - Provenance to populate.
+/// * `bytes` - Raw target bytes.
+fn from_dwarf(provenance: &mut Provenance, bytes: &[u8]) {
+    if provenance.build_path.is_some() {
+        return;
+    }
+    let Some(dwarf) = crate::dwarf::parse_dwarf(bytes) else {
+        return;
+    };
+    provenance.build_path = first_comp_dir(&dwarf.compile_units);
+}
+
+/// Returns the first non-empty compilation directory.
+///
+/// # Arguments
+///
+/// * `units` - Compilation units.
+///
+/// # Returns
+///
+/// The first non-empty `comp_dir`, or `None`.
+fn first_comp_dir(units: &[crate::dwarf::CompileUnit]) -> Option<String> {
+    units.iter().map(|u| u.comp_dir.clone()).find(|dir| !dir.is_empty())
+}
+
 /// Recovers the build-origin path from debug metadata.
 ///
 /// # Arguments
@@ -387,6 +433,14 @@ mod tests {
         assert_eq!(pdb_path(&fact).as_deref(), Some(r"C:\app.pdb"));
         let other = crate::model::Fact::new("Rich header", "Present");
         assert_eq!(pdb_path(&other), None);
+    }
+
+    /// Verifies DWARF compilation directory selection.
+    #[test]
+    fn test_first_comp_dir() {
+        let empty = crate::dwarf::CompileUnit::default();
+        let unit = crate::dwarf::CompileUnit { name: "b.c".into(), comp_dir: "/build".into() };
+        assert_eq!(first_comp_dir(&[empty, unit]).as_deref(), Some("/build"));
     }
 
     /// Builds a synthetic debug-database fact.

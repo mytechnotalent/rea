@@ -142,6 +142,9 @@ struct StreamLoc {
 
     /// `#Strings` heap offset.
     strings: Option<usize>,
+
+    /// `#Blob` heap offset.
+    blob: Option<usize>,
 }
 
 impl StreamLoc {
@@ -153,12 +156,11 @@ impl StreamLoc {
     /// * `off` - Absolute stream offset.
     /// * `size` - Stream size in bytes.
     fn assign(&mut self, name: &str, off: usize, size: usize) {
-        if name == "#~" || name == "#-" {
-            self.tables = Some((off, size));
-            return;
-        }
-        if name == "#Strings" {
-            self.strings = Some(off);
+        match name {
+            "#~" | "#-" => self.tables = Some((off, size)),
+            "#Strings" => self.strings = Some(off),
+            "#Blob" => self.blob = Some(off),
+            _ => {}
         }
     }
 }
@@ -206,6 +208,9 @@ struct Tables<'a> {
 
     /// `#Strings` heap offset.
     strings: usize,
+
+    /// `#Blob` heap offset.
+    blobs: usize,
 }
 
 impl Tables<'_> {
@@ -220,13 +225,13 @@ impl Tables<'_> {
     /// # Returns
     ///
     /// The parsed context, or `None`.
-    fn parse(bytes: &[u8], toff: usize, soff: usize) -> Option<Tables<'_>> {
+    fn parse(bytes: &[u8], toff: usize, soff: usize, boff: usize) -> Option<Tables<'_>> {
         let flags = read_u16(bytes, toff + 6)?;
         let valid = read_u64(bytes, toff + 8)?;
         let rows = read_rows(bytes, toff + 24, valid)?;
         let data = toff + 24 + 4 * valid.count_ones() as usize;
         let heaps = Heaps::new(flags);
-        Some(Tables { bytes, rows, heaps, data, strings: soff })
+        Some(Tables { bytes, rows, heaps, data, strings: soff, blobs: boff })
     }
 
     /// Recovers all `AssemblyRef` entries.
@@ -298,11 +303,12 @@ impl Tables<'_> {
     ///
     /// The assembly reference, or `None`.
     fn assembly_ref(&self, off: usize) -> Option<DotNetAssemblyRef> {
+        let token = self.read_blob_at(off + 12);
         let name_col = off + 12 + self.heaps.blob;
         let name_idx = self.read_index(name_col)?;
         let name = self.read_string(name_idx)?;
         let version = version_text(self.bytes, off)?;
-        Some(DotNetAssemblyRef { name, version })
+        Some(DotNetAssemblyRef { name, version, token })
     }
 
     /// Reads a `#Strings` heap index at an offset.
@@ -315,13 +321,62 @@ impl Tables<'_> {
     ///
     /// The heap-relative index, or `None`.
     fn read_index(&self, at: usize) -> Option<usize> {
-        let width = self.heaps.strings;
+        self.read_indices(at, self.heaps.strings)
+    }
+
+    /// Reads a heap index of the given width at an offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `at` - Index offset.
+    /// * `width` - Index width in bytes.
+    ///
+    /// # Returns
+    ///
+    /// The index value, or `None`.
+    fn read_indices(&self, at: usize, width: usize) -> Option<usize> {
         let value = if width == 4 {
             read_u32(self.bytes, at)? as usize
         } else {
             read_u16(self.bytes, at)? as usize
         };
         Some(value)
+    }
+
+    /// Reads and hex-encodes a `#Blob` entry addressed by an index column.
+    ///
+    /// # Arguments
+    ///
+    /// * `index_col` - Offset of the blob index.
+    ///
+    /// # Returns
+    ///
+    /// The hex token, or an empty string.
+    fn read_blob_at(&self, index_col: usize) -> String {
+        let index = self.read_indices(index_col, self.heaps.blob);
+        let Some(index) = index else {
+            return String::new();
+        };
+        match self.read_blob(index) {
+            Some(bytes) => crate::hashes::hex(&bytes),
+            None => String::new(),
+        }
+    }
+
+    /// Reads a `#Blob` heap entry by heap-relative offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - Heap-relative offset.
+    ///
+    /// # Returns
+    ///
+    /// The blob bytes, or `None`.
+    fn read_blob(&self, index: usize) -> Option<Vec<u8>> {
+        let base = self.blobs + index;
+        let (len, size) = compressed_uint(self.bytes, base)?;
+        let start = base + size;
+        Some(self.bytes.get(start..start + len)?.to_vec())
     }
 
     /// Reads a `#Strings` heap entry by offset.
@@ -349,7 +404,7 @@ impl Tables<'_> {
 pub fn recover_references(bytes: &[u8], bsjb: usize, meta: &mut DotNetMetadata) {
     let loc = find_streams(bytes, bsjb);
     let streams = loc.as_ref().and_then(stream_pair);
-    let parsed = streams.and_then(|(t, s)| Tables::parse(bytes, t, s));
+    let parsed = streams.and_then(|(t, s, b)| Tables::parse(bytes, t, s, b));
     if let Some(tables) = parsed {
         meta.references = tables.assembly_refs();
     }
@@ -364,9 +419,9 @@ pub fn recover_references(bytes: &[u8], bsjb: usize, meta: &mut DotNetMetadata) 
 /// # Returns
 ///
 /// The tables offset and strings offset.
-fn stream_pair(loc: &StreamLoc) -> Option<(usize, usize)> {
+fn stream_pair(loc: &StreamLoc) -> Option<(usize, usize, usize)> {
     let (toff, _) = loc.tables?;
-    Some((toff, loc.strings?))
+    Some((toff, loc.strings?, loc.blob?))
 }
 
 /// Locates the metadata streams of interest.
@@ -600,6 +655,61 @@ fn set_bits(valid: u64) -> impl Iterator<Item = usize> {
     (0..64).filter(move |i| valid & (1 << i) != 0)
 }
 
+/// Reads an ECMA-335 compressed unsigned integer.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw file bytes.
+/// * `at` - Source offset.
+///
+/// # Returns
+///
+/// The value and its encoded length, or `None`.
+fn compressed_uint(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
+    let first = *bytes.get(at)? as usize;
+    if first & 0x80 == 0 {
+        return Some((first, 1));
+    }
+    wide_uint(bytes, at, first)
+}
+
+/// Reads a two- or four-byte compressed unsigned integer.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw file bytes.
+/// * `at` - Source offset.
+/// * `first` - First byte.
+///
+/// # Returns
+///
+/// The value and its encoded length, or `None`.
+fn wide_uint(bytes: &[u8], at: usize, first: usize) -> Option<(usize, usize)> {
+    let second = *bytes.get(at + 1)? as usize;
+    if first & 0x40 == 0 {
+        return Some((((first & 0x3f) << 8) | second, 2));
+    }
+    let high = ((first & 0x1f) << 24) | (second << 16);
+    Some((compressed_tail(bytes, at, high)?, 4))
+}
+
+/// Reads the trailing bytes of a four-byte compressed integer.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw file bytes.
+/// * `at` - Source offset.
+/// * `high` - Pre-accumulated high bytes.
+///
+/// # Returns
+///
+/// The value, or `None`.
+fn compressed_tail(bytes: &[u8], at: usize, high: usize) -> Option<usize> {
+    let second = *bytes.get(at + 2)? as usize;
+    let third = *bytes.get(at + 3)? as usize;
+    Some(high | (second << 8) | third)
+}
+
 /// Reads a little-endian `u16`.
 ///
 /// # Arguments
@@ -707,8 +817,9 @@ mod tests {
     /// The encoded stream headers.
     fn stream_headers() -> Vec<u8> {
         let mut buf = Vec::new();
-        add_stream(&mut buf, "#Strings", 64, 16);
-        add_stream(&mut buf, "#~", 80, 48);
+        add_stream(&mut buf, "#Strings", 80, 16);
+        add_stream(&mut buf, "#Blob", 96, 12);
+        add_stream(&mut buf, "#~", 108, 48);
         buf
     }
 
@@ -723,7 +834,7 @@ mod tests {
         buf.extend_from_slice(&[1, 0, 1, 0, 0, 0, 0, 0]);
         push_u32(&mut buf, 12);
         buf.extend_from_slice(b"v4.0.30319\0\0");
-        push_u32(&mut buf, 0x0002_0000);
+        push_u32(&mut buf, 0x0003_0000);
         buf
     }
 
@@ -736,6 +847,18 @@ mod tests {
         b"\0System.Runtime\0".to_vec()
     }
 
+    /// `#Blob` heap for the synthetic blob.
+    ///
+    /// # Returns
+    ///
+    /// The encoded heap.
+    fn blob_heap() -> Vec<u8> {
+        let mut buf = vec![0u8, 8];
+        buf.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        buf.extend_from_slice(&[0, 0]);
+        buf
+    }
+
     /// Appends one `AssemblyRef` row.
     ///
     /// # Arguments
@@ -745,7 +868,7 @@ mod tests {
         push_u32(buf, 9);
         push_u32(buf, 0);
         push_u32(buf, 0);
-        push_u16(buf, 0);
+        push_u16(buf, 1);
         push_u16(buf, 1);
         push_u16(buf, 0);
         push_u16(buf, 0);
@@ -775,6 +898,7 @@ mod tests {
         let mut buf = prefix();
         buf.extend_from_slice(&stream_headers());
         buf.extend_from_slice(&strings_heap());
+        buf.extend_from_slice(&blob_heap());
         buf.extend_from_slice(&tables());
         buf
     }
@@ -787,6 +911,7 @@ mod tests {
         assert_eq!(meta.references.len(), 1);
         assert_eq!(meta.references[0].name, "System.Runtime");
         assert_eq!(meta.references[0].version, "9.0.0.0");
+        assert_eq!(meta.references[0].token, "0102030405060708");
     }
 
     /// Verifies coded and simple index width computation.

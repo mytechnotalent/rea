@@ -28,7 +28,7 @@
 
 // Import dependencies from rea_engine
 use rea_engine::{
-    provenance::{recover, Provenance},
+    provenance::{recover_detailed, Provenance},
     Analysis,
 };
 
@@ -43,12 +43,13 @@ use crate::compose::text;
 /// # Arguments
 ///
 /// * `analysis` - Completed analysis.
+/// * `bytes` - Raw target bytes.
 ///
 /// # Returns
 ///
 /// The section, or nothing when no provenance was recovered.
-pub fn sections(analysis: &Analysis) -> Vec<Section> {
-    let provenance = recover(analysis);
+pub fn sections(analysis: &Analysis, bytes: &[u8]) -> Vec<Section> {
+    let provenance = recover_detailed(analysis, bytes);
     if provenance.components.is_empty()
         && provenance.toolchain.is_none()
         && provenance.build_path.is_none()
@@ -114,6 +115,6 @@ mod tests {
     #[test]
     fn test_provenance_skips_plain() {
         let analysis = rea_engine::analyze("blob.bin", b"plain data");
-        assert_eq!(sections(&analysis).len(), 0);
+        assert_eq!(sections(&analysis, b"").len(), 0);
     }
 }

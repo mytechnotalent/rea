@@ -512,7 +512,7 @@ fn evidence(analysis: &Analysis, bytes: &[u8]) -> Vec<Section> {
     sections.extend(artifacts::sections(analysis, bytes));
     sections.extend(container::sections(bytes));
     sections.extend(coverage::sections(analysis, bytes));
-    sections.extend(provenance::sections(analysis));
+    sections.extend(provenance::sections(analysis, bytes));
     sections
 }
 

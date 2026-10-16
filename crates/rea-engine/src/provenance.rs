@@ -95,8 +95,42 @@ pub fn recover(analysis: &Analysis) -> Provenance {
     let mut provenance = Provenance::default();
     from_go(&mut provenance, analysis);
     from_dotnet(&mut provenance, analysis);
+    from_imports(&mut provenance, analysis);
     from_native(&mut provenance, analysis);
     provenance
+}
+
+/// Recovers linked library components from import metadata.
+///
+/// # Arguments
+///
+/// * `provenance` - Provenance to populate.
+/// * `analysis` - Completed analysis.
+fn from_imports(provenance: &mut Provenance, analysis: &Analysis) {
+    let Some(binary) = &analysis.binary else {
+        return;
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for import in &binary.imports {
+        push_library(provenance, &mut seen, &import.library);
+    }
+}
+
+/// Pushes a distinct library component.
+///
+/// # Arguments
+///
+/// * `provenance` - Provenance to populate.
+/// * `seen` - Already-recorded library names.
+/// * `library` - Library name.
+fn push_library(
+    provenance: &mut Provenance,
+    seen: &mut std::collections::BTreeSet<String>,
+    library: &str,
+) {
+    if !library.is_empty() && seen.insert(library.to_string()) {
+        provenance.components.push(component(library, "", ComponentKind::Library));
+    }
 }
 
 /// Recovers a native toolchain fingerprint from strings.
@@ -286,5 +320,15 @@ mod tests {
             Some("GCC: (Rev5, Built by MSYS2 project) 16.1.0".to_string())
         );
         assert_eq!(toolchain_of("rust_begin_unwind"), Some("Rust".to_string()));
+    }
+
+    /// Verifies that linked libraries are deduplicated.
+    #[test]
+    fn test_push_library_dedupes() {
+        let mut provenance = Provenance::default();
+        let mut seen = std::collections::BTreeSet::new();
+        push_library(&mut provenance, &mut seen, "KERNEL32.dll");
+        push_library(&mut provenance, &mut seen, "KERNEL32.dll");
+        assert_eq!(provenance.components.len(), 1);
     }
 }

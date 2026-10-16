@@ -82,6 +82,43 @@ installed. This turns the tagline into a capability.
 
 ---
 
+## 3c. v7.0.0 — Understand & Trust (in progress)
+
+**Theme:** one major with two pillars — understand what the binary *does*, and trust where it *came
+from*. Everything is pure Rust, offline, and feeds the addressable evidence bundle.
+
+### Pillar A — Understand (behavior)
+
+1. **Decompiler quality.** Structured control flow without spurious `while (true)`; real condition
+   text (comparisons, signed/unsigned sense); variable naming; and type-aware rendering. Target: a
+   pseudo-C listing an analyst can read top to bottom.
+2. **Behavioral analysis.** Function-level behavior summaries and a call-graph narrative in the
+   report (deterministic facts; the authored assessment explains them).
+3. **Cross-format behavior.** Reconstruct behavior for .NET CIL, Go, WASM, and JVM functions, not
+   only native.
+4. **Emulation depth.** Broader architecture coverage, import/syscall stubbing, and
+   emulation-driven key and string recovery.
+
+### Pillar B — Trust (provenance)
+
+1. **Dependency recovery.** Rust `cargo-auditable`-style crate metadata (names, versions, sources,
+   edges) from ELF/PE/Mach-O; Go module graph; .NET assembly references and public-key tokens;
+   native compiler/version and build paths from DWARF/PDB.
+2. **SBOM.** Emit **CycloneDX** and **SPDX** JSON; new `rea sbom <file>` command and MCP `get_sbom`.
+3. **Provenance report section** — attribution of toolchain, dependencies, and build environment.
+
+### Unity
+
+Every behavioral claim and every dependency becomes an addressable item in
+`re-<name>.evidence.json`, so the whole assessment is verifiable offline with `rea verify`.
+
+### Acceptance
+
+- `cargo xtask check` green; every new module documented and tested.
+- Deterministic offline behavior for all of the above (no network, no external tools).
+
+---
+
 ## 3a. v5.4.0 — Nation-State Report Redesign (in progress)
 
 **Goal:** the report is the product. An LLM authors a nation-state-grade intelligence assessment

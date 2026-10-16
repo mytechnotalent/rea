@@ -265,13 +265,26 @@ fn append_diamond(
     diamond: &Diamond,
 ) {
     append_statements(out, ctx, body_slice(ctx, index, true), index, level);
-    out.push(format!("{}if ({}) {{", indent(level), diamond.cond));
+    let cond = condition_expr(&diamond.cond);
+    out.push(format!("{}if ({cond}) {{", indent(level)));
     append_arm(out, ctx, diamond.then_block, level + 1);
+    append_else(out, ctx, level, diamond);
+    out.push(format!("{}}}", indent(level)));
+}
+
+/// Appends a diamond's else arm when present.
+///
+/// # Arguments
+///
+/// * `out` - Accumulated output lines.
+/// * `ctx` - Emission context.
+/// * `level` - Indentation depth.
+/// * `diamond` - Diamond to render.
+fn append_else(out: &mut Vec<String>, ctx: &Ctx<'_>, level: usize, diamond: &Diamond) {
     if let Some(other) = diamond.else_block {
         out.push(format!("{}}} else {{", indent(level)));
         append_arm(out, ctx, other, level + 1);
     }
-    out.push(format!("{}}}", indent(level)));
 }
 
 /// Appends a single-block diamond arm without its join jump.
@@ -441,10 +454,27 @@ fn jump_text(target: u64, ctx: &Ctx<'_>, index: usize) -> String {
 ///
 /// The statement text.
 fn cond_text(cond: &str, target: u64, ctx: &Ctx<'_>, index: usize) -> String {
+    let guard = condition_expr(cond);
     if is_back_edge(target, ctx, index) {
-        return format!("if ({cond}) continue;");
+        return format!("if ({guard}) continue;");
     }
-    format!("if ({cond}) goto lbl_{target:x};")
+    format!("if ({guard}) goto lbl_{target:x};")
+}
+
+/// Builds a valid C condition from an IR branch condition.
+///
+/// # Arguments
+///
+/// * `cond` - Branch condition text.
+///
+/// # Returns
+///
+/// The C condition expression.
+fn condition_expr(cond: &str) -> String {
+    if matches!(cond, "==" | "!=" | "<" | "<=" | ">" | ">=") {
+        return format!("flags {cond} 0");
+    }
+    cond.to_string()
 }
 
 /// Reports whether a branch target closes an enclosing loop.
@@ -587,7 +617,7 @@ mod tests {
         let lines = if_else_body();
         let graph = build(&lines);
         let text = render("f", &lines, &graph);
-        assert!(text.contains("if (!=) {"));
+        assert!(text.contains("if (flags != 0) {"));
         assert!(text.contains("} else {"));
     }
 }

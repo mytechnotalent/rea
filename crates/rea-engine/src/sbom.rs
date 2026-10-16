@@ -54,7 +54,7 @@ const SPDX_SPEC: &str = "SPDX-2.3";
 /// The pretty JSON document.
 #[must_use]
 pub fn cyclonedx(name: &str, tool_version: &str, provenance: &Provenance) -> String {
-    let metadata = metadata(name, tool_version);
+    let metadata = metadata(name, tool_version, provenance);
     let components = components(provenance);
     let document = json!({"bomFormat": "CycloneDX", "specVersion": CYCLONEDX_SPEC, "version": 1, "metadata": metadata, "components": components});
     serde_json::to_string_pretty(&document).unwrap_or_default()
@@ -66,16 +66,34 @@ pub fn cyclonedx(name: &str, tool_version: &str, provenance: &Provenance) -> Str
 ///
 /// * `name` - Target name.
 /// * `tool_version` - Producing tool version.
+/// * `provenance` - Recovered provenance.
 ///
 /// # Returns
 ///
 /// The JSON object.
-fn metadata(name: &str, tool_version: &str) -> Value {
+fn metadata(name: &str, tool_version: &str, provenance: &Provenance) -> Value {
     json!({
         "timestamp": now(),
         "tools": [{"vendor": "REA", "name": "rea", "version": tool_version}],
         "component": {"type": "application", "name": name},
+        "properties": properties(provenance),
     })
+}
+
+/// Builds `CycloneDX` metadata properties.
+///
+/// # Arguments
+///
+/// * `provenance` - Recovered provenance.
+///
+/// # Returns
+///
+/// The JSON array.
+fn properties(provenance: &Provenance) -> Value {
+    match &provenance.toolchain {
+        Some(toolchain) => json!([{"name": "toolchain", "value": toolchain}]),
+        None => Value::Array(Vec::new()),
+    }
 }
 
 /// Renders an `SPDX` SBOM document.

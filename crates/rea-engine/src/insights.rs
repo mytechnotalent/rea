@@ -672,6 +672,156 @@ fn x86_listing(
     listing::render(&code, binary.bits, address, LISTING_LINES, note)
 }
 
+/// Deterministic summary of the recovered call graph.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CallGraph {
+    /// Total function count.
+    pub functions: usize,
+
+    /// Total internal call-edge count.
+    pub edges: usize,
+
+    /// Entry-point function name, when known.
+    pub entry: String,
+
+    /// Most-called functions as name and caller count.
+    pub hubs: Vec<(String, usize)>,
+
+    /// Leaf-function count.
+    pub leaves: usize,
+
+    /// Recursive function names.
+    pub recursive: Vec<String>,
+}
+
+/// Builds a deterministic call-graph summary.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+///
+/// # Returns
+///
+/// The summary, or `None` when no disassembly exists.
+#[must_use]
+pub fn call_graph(analysis: &Analysis) -> Option<CallGraph> {
+    let code = analysis.disassembly.as_ref()?;
+    let mut graph = CallGraph::default();
+    fill_shape(&mut graph, code);
+    fill_names(&mut graph, analysis, code);
+    Some(graph)
+}
+
+/// Fills structural call-graph counts.
+///
+/// # Arguments
+///
+/// * `graph` - Summary to populate.
+/// * `code` - Recovered code structure.
+fn fill_shape(graph: &mut CallGraph, code: &Disassembly) {
+    graph.functions = code.functions.len();
+    graph.edges = code.functions.values().map(|f| f.calls.len()).sum();
+    graph.leaves = code.functions.values().filter(|f| f.calls.is_empty()).count();
+}
+
+/// Fills named call-graph fields.
+///
+/// # Arguments
+///
+/// * `graph` - Summary to populate.
+/// * `analysis` - Completed analysis.
+/// * `code` - Recovered code structure.
+fn fill_names(graph: &mut CallGraph, analysis: &Analysis, code: &Disassembly) {
+    graph.entry = entry_name(analysis, code);
+    graph.hubs = hubs(code);
+    graph.recursive = recursive(code);
+}
+
+/// Names the entry-point function.
+///
+/// # Arguments
+///
+/// * `analysis` - Completed analysis.
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// The entry-point name, or an empty string.
+fn entry_name(analysis: &Analysis, code: &Disassembly) -> String {
+    let entry = analysis.binary.as_ref().map_or(0, |b| b.entry);
+    if entry == 0 || !code.functions.contains_key(&entry) {
+        return String::new();
+    }
+    code.name_of(entry)
+}
+
+/// Ranks the most-called internal functions.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// Up to three `(name, caller count)` pairs.
+fn hubs(code: &Disassembly) -> Vec<(String, usize)> {
+    let mut degree: HashMap<u64, usize> = HashMap::new();
+    for function in code.functions.values() {
+        bump(&mut degree, &function.calls);
+    }
+    ranked(&degree, code)
+}
+
+/// Increments the caller count for each call target.
+///
+/// # Arguments
+///
+/// * `degree` - Callee to caller count.
+/// * `targets` - Call targets.
+fn bump(degree: &mut HashMap<u64, usize>, targets: &std::collections::BTreeSet<u64>) {
+    for &target in targets {
+        *degree.entry(target).or_default() += 1;
+    }
+}
+
+/// Sorts and truncates the caller-degree list.
+///
+/// # Arguments
+///
+/// * `degree` - Callee to caller count.
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// The ranked hubs.
+fn ranked(degree: &HashMap<u64, usize>, code: &Disassembly) -> Vec<(String, usize)> {
+    let mut pairs: Vec<(u64, usize)> = degree.iter().map(|(&a, &n)| (a, n)).collect();
+    pairs.sort_by_key(|&(_, n)| Reverse(n));
+    pairs
+        .iter()
+        .filter(|&&(_, n)| n >= 2)
+        .take(3)
+        .map(|&(a, n)| (code.name_of(a), n))
+        .collect()
+}
+
+/// Lists recursive functions.
+///
+/// # Arguments
+///
+/// * `code` - Recovered code structure.
+///
+/// # Returns
+///
+/// The recursive function names.
+fn recursive(code: &Disassembly) -> Vec<String> {
+    code.functions
+        .values()
+        .filter(|f| f.calls.contains(&f.address))
+        .map(|f| code.name_of(f.address))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     // Import all parent module items

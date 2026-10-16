@@ -95,10 +95,14 @@ mod coverage;
 /// Build provenance.
 mod provenance;
 
+/// Call graph summary.
+mod callgraph;
+
 /// Report section builders, in reading order.
-const SECTIONS: [fn(&Analysis) -> Vec<Section>; 12] = [
+const SECTIONS: [fn(&Analysis) -> Vec<Section>; 13] = [
     summary::sections,
     program_summary::sections,
+    callgraph::sections,
     identity::sections,
     structure::sections,
     firmware::sections,

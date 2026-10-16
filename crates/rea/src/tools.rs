@@ -661,10 +661,22 @@ fn format_emulation(run: &emulate::Emulation) -> String {
         "steps={} stop={:?} exit={:#x}\n",
         run.steps, run.stop, run.exit
     );
-    for finding in &run.found {
-        let _ = writeln!(out, "  FLAG {:#x} {:?}", finding.address, finding.text);
-    }
+    append_findings(&mut out, "FLAG", &run.found);
+    append_findings(&mut out, "STRING", &run.strings);
     out
+}
+
+/// Appends tagged findings to an output buffer.
+///
+/// # Arguments
+///
+/// * `out` - Output buffer.
+/// * `tag` - Finding tag.
+/// * `items` - Findings to append.
+fn append_findings(out: &mut String, tag: &str, items: &[rea_engine::Finding]) {
+    for finding in items {
+        let _ = writeln!(out, "  {tag} {:#x} {:?}", finding.address, finding.text);
+    }
 }
 
 /// Reads bytes at a virtual address.

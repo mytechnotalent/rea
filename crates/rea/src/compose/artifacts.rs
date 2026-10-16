@@ -73,10 +73,51 @@ fn artifact_group_a(out: &mut Vec<Section>, bytes: &[u8]) {
 /// * `out` - Accumulated sections.
 /// * `bytes` - Raw target bytes.
 fn artifact_group_b(out: &mut Vec<Section>, bytes: &[u8]) {
+    push_section(out, "Managed .NET Assembly", dotnet_note(bytes));
+    push_section(out, "Go Binary", go_note(bytes));
     push_section(out, "Android Resources", arsc_note(bytes));
     push_section(out, "DWARF Debug Info", dwarf_note(bytes));
     push_section(out, "MS-DOS Executable", dos_note(bytes));
     push_section(out, "Network Capture", capture_note(bytes));
+}
+
+/// Builds the managed .NET assembly note.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// The note, or `None`.
+fn dotnet_note(bytes: &[u8]) -> Option<String> {
+    let meta = rea_engine::dotnet::parse_dotnet_metadata(bytes)?;
+    Some(format!(
+        "Managed .NET assembly (runtime {}): {} types, {} methods, {} references.",
+        meta.runtime_version,
+        meta.type_count,
+        meta.method_count,
+        meta.references.len()
+    ))
+}
+
+/// Builds the Go binary note.
+///
+/// # Arguments
+///
+/// * `bytes` - Raw target bytes.
+///
+/// # Returns
+///
+/// The note, or `None`.
+fn go_note(bytes: &[u8]) -> Option<String> {
+    let go = rea_engine::go::parse_go_metadata(bytes)?;
+    Some(format!(
+        "Go binary ({}): package {}, {} dependencies.",
+        go.version,
+        go.module_path,
+        go.dependencies.len()
+    ))
 }
 
 /// Appends a section when a note was produced.
@@ -102,13 +143,13 @@ fn push_section(out: &mut Vec<Section>, title: &str, note: Option<String>) {
 ///
 /// The note, or `None`.
 fn wasm_note(bytes: &[u8]) -> Option<String> {
-    let module = rea_engine::wasm::parse_wasm(bytes)?;
-    Some(format!(
-        "WebAssembly version {} with {} imports and {} exports.",
-        module.version,
-        module.imports.len(),
-        module.exports.len()
-    ))
+    let m = rea_engine::wasm::parse_wasm(bytes)?;
+    let v = m.version;
+    let f = m.functions;
+    let im = m.imports.len();
+    let ex = m.exports.len();
+    let text = format!("WASM v{v}: {f} functions, {im} imports, {ex} exports.");
+    Some(text)
 }
 
 /// Builds the SQLite note.
@@ -144,8 +185,41 @@ fn evm_note(bytes: &[u8]) -> Option<String> {
     }
     let text = String::from_utf8_lossy(bytes);
     let code = rea_engine::evm::decode_hex(&text)?;
-    let evm = rea_engine::evm::parse_evm(&code);
-    Some(format!("EVM bytecode: {} bytes.", evm.length))
+    Some(evm_summary(&rea_engine::evm::parse_evm(&code)))
+}
+
+/// Describes EVM bytecode behavior.
+///
+/// # Arguments
+///
+/// * `evm` - Recovered EVM bytecode.
+///
+/// # Returns
+///
+/// The note text.
+fn evm_summary(evm: &rea_engine::evm::EvmBytecode) -> String {
+    let mutability = class_of(&evm.mutability);
+    let len = evm.length;
+    let sel = evm.selectors.len();
+    let feat = evm.features.len();
+    format!("EVM: {len}B, {sel} selectors, {mutability}, {feat} features.")
+}
+
+/// Returns `unknown` for an empty string.
+///
+/// # Arguments
+///
+/// * `value` - Candidate value.
+///
+/// # Returns
+///
+/// The value, or `unknown`.
+fn class_of(value: &str) -> &str {
+    if value.is_empty() {
+        "unknown"
+    } else {
+        value
+    }
 }
 
 /// Builds the property list note.
@@ -179,8 +253,24 @@ fn plist_note(bytes: &[u8]) -> Option<String> {
 /// The note, or `None`.
 fn java_note(bytes: &[u8]) -> Option<String> {
     let class = rea_engine::jvm::parse_class(bytes)?;
+    let name = &class.this_class;
     let version = format!("v{}.{}", class.major, class.minor);
-    Some(format!("Java class {} ({version}).", class.this_class))
+    let (methods, fields) = members(&class);
+    let text = format!("Java {name} {version}: {methods} methods, {fields} fields.");
+    Some(text)
+}
+
+/// Counts a Java class's methods and fields.
+///
+/// # Arguments
+///
+/// * `class` - Parsed Java class.
+///
+/// # Returns
+///
+/// The `(methods, fields)` counts.
+fn members(class: &rea_engine::jvm::JavaClass) -> (usize, usize) {
+    (class.methods.len(), class.fields.len())
 }
 
 /// Builds the Android resources note.

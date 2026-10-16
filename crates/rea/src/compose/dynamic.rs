@@ -68,24 +68,26 @@ pub fn sections(analysis: &Analysis) -> Vec<Section> {
 fn section(emulation: &Emulation) -> Section {
     let section = Section::new("Dynamic Analysis (Emulated)").with(text::paragraph(INTRO));
     let section = section.with(Block::Paragraph(summary(emulation)));
-    with_findings(section, &emulation.found)
+    let section = with_findings(section, "Recovered Runtime Strings", &emulation.found);
+    with_findings(section, "Decrypted Strings", &emulation.strings)
 }
 
-/// Appends recovered runtime strings when any were found.
+/// Appends recovered strings when any were found.
 ///
 /// # Arguments
 ///
 /// * `section` - Section being built.
-/// * `found` - Recovered flag-shaped strings.
+/// * `title` - Subheading title.
+/// * `found` - Recovered strings.
 ///
 /// # Returns
 ///
 /// The section, extended when findings exist.
-fn with_findings(section: Section, found: &[Finding]) -> Section {
+fn with_findings(section: Section, title: &str, found: &[Finding]) -> Section {
     if found.is_empty() {
         return section;
     }
-    let section = section.with(text::subheading("Recovered Runtime Strings"));
+    let section = section.with(text::subheading(title));
     section.with(Block::Bullets(found.iter().map(finding_line).collect()))
 }
 
@@ -165,7 +167,8 @@ mod tests {
     /// The fixture emulation.
     fn emulation_fixture() -> Emulation {
         let found = vec![Finding { address: 0x2100, text: "Sample{placeholder}".to_string() }];
-        Emulation { entry: 0x1000, steps: 12, exit: 0x2000, stop: Stop::Budget, found }
+        let strings = vec![Finding { address: 0x2200, text: "decrypted-config".to_string() }];
+        Emulation { entry: 0x1000, steps: 12, exit: 0x2000, stop: Stop::Budget, found, strings }
     }
 
     /// Builds an analysis carrying a chosen emulation outcome.

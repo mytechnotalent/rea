@@ -1634,6 +1634,9 @@ fn print_findings(run: &rea_engine::emulate::Emulation) {
     for finding in &run.found {
         println!("  FLAG 0x{:x} {:?}", finding.address, finding.text);
     }
+    for finding in &run.strings {
+        println!("  STRING 0x{:x} {:?}", finding.address, finding.text);
+    }
 }
 
 /// Unpacks a target by emulating it with stubbed imports.

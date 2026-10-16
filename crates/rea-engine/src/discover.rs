@@ -41,6 +41,12 @@ const MAX_TOKEN: usize = 96;
 /// Maximum findings reported from one run.
 const MAX_FINDINGS: usize = 16;
 
+/// Minimum length of a recovered runtime string.
+const MIN_STRING: usize = 6;
+
+/// Maximum length of a recovered runtime string.
+const MAX_STRING: usize = 120;
+
 /// Minimum identifier characters before the opening brace.
 const MIN_PREFIX: usize = 2;
 
@@ -109,6 +115,94 @@ fn consider(address: u64, text: String, static_bytes: &[u8], out: &mut Vec<Findi
     if !known && !seen {
         out.push(Finding { address, text });
     }
+}
+
+/// Scans emulated memory for novel printable strings.
+///
+/// Recovers printable ASCII runs absent from the static file, so only
+/// runtime-produced strings are reported.
+///
+/// # Arguments
+///
+/// * `emu` - Emulator whose memory is scanned.
+/// * `static_bytes` - Original file contents, used to reject known strings.
+///
+/// # Returns
+///
+/// The recovered strings, capped in number.
+#[must_use]
+pub fn scan_strings(emu: &Emulator, static_bytes: &[u8]) -> Vec<Finding> {
+    let mut out = Vec::new();
+    for base in emu.mapped_pages() {
+        collect_runs(emu, base, static_bytes, &mut out);
+        if out.len() >= MAX_FINDINGS {
+            break;
+        }
+    }
+    out
+}
+
+/// Scans one mapped page window for printable strings.
+///
+/// # Arguments
+///
+/// * `emu` - Emulator whose memory is read.
+/// * `base` - Page base address.
+/// * `static_bytes` - Original file contents.
+/// * `out` - Accumulator receiving findings.
+fn collect_runs(emu: &Emulator, base: u64, static_bytes: &[u8], out: &mut Vec<Finding>) {
+    let bytes = emu.read_bytes(base, PAGE_SPAN);
+    for (offset, text) in printable_runs(&bytes) {
+        consider(base + offset as u64, text, static_bytes, out);
+    }
+}
+
+/// Finds printable ASCII runs and their offsets.
+///
+/// # Arguments
+///
+/// * `bytes` - Byte slice to scan.
+///
+/// # Returns
+///
+/// The `(offset, text)` runs.
+fn printable_runs(bytes: &[u8]) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    scan_runs(bytes, &mut out);
+    out
+}
+
+/// Collects printable runs within a buffer.
+///
+/// # Arguments
+///
+/// * `bytes` - Byte slice to scan.
+/// * `out` - Accumulator receiving runs.
+fn scan_runs(bytes: &[u8], out: &mut Vec<(usize, String)>) {
+    let mut start = 0;
+    for end in 0..=bytes.len() {
+        if end == bytes.len() || !is_print(bytes[end]) {
+            push_run(start, end, bytes, out);
+            start = end + 1;
+        }
+    }
+}
+
+/// Records a printable run when it meets the length bounds.
+///
+/// # Arguments
+///
+/// * `start` - Run start offset.
+/// * `end` - Run end offset.
+/// * `bytes` - Source byte slice.
+/// * `out` - Accumulator receiving runs.
+fn push_run(start: usize, end: usize, bytes: &[u8], out: &mut Vec<(usize, String)>) {
+    let len = end - start;
+    if !(MIN_STRING..=MAX_STRING).contains(&len) {
+        return;
+    }
+    let text = String::from_utf8_lossy(&bytes[start..end]).to_string();
+    out.push((start, text));
 }
 
 /// Finds flag-shaped tokens in a byte slice.

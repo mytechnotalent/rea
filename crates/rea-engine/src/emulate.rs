@@ -97,6 +97,9 @@ pub struct Emulation {
 
     /// Flag-shaped strings recovered from emulated memory.
     pub found: Vec<Finding>,
+
+    /// Runtime strings written to memory during emulation.
+    pub strings: Vec<Finding>,
 }
 
 /// Emulates a binary from its declared entry point.
@@ -204,6 +207,7 @@ fn execute(
 ) -> Emulation {
     let mut outcome = drive(emu, entry, range, budget);
     outcome.found = discover::scan(emu, bytes);
+    outcome.strings = discover::scan_strings(emu, bytes);
     outcome
 }
 
@@ -393,7 +397,7 @@ fn in_range(pc: u64, range: (u64, u64)) -> bool {
 ///
 /// The outcome.
 fn halted(entry: u64, steps: u64, exit: u64, stop: Stop) -> Emulation {
-    Emulation { entry, steps, exit, stop, found: Vec::new() }
+    Emulation { entry, steps, exit, stop, found: Vec::new(), strings: Vec::new() }
 }
 
 #[cfg(test)]

@@ -144,6 +144,9 @@ pub enum Expr {
     /// Binary operation `lhs op rhs`.
     Bin(&'static str, Box<Self>, Box<Self>),
 
+    /// C-style cast of an expression to an integer type.
+    Cast(&'static str, Box<Self>),
+
     /// Unparsed operand text.
     Raw(String),
 }
@@ -507,9 +510,95 @@ fn data_transfer(mnemonic: &str, dst: &str, src: &str) -> Inst {
         return Inst::Store { addr: address_of(dst), src: parse_expr(src) };
     }
     if LOADS.contains(&mnemonic) || MOVES.contains(&mnemonic) {
-        return Inst::Assign { dst: parse_expr(dst), src: parse_expr(src) };
+        return Inst::Assign { dst: parse_expr(dst), src: widen_value(mnemonic, src) };
     }
     Inst::Other(joined_pair(mnemonic, dst, src))
+}
+
+/// Wraps a widening load in a C integer cast.
+///
+/// # Arguments
+///
+/// * `mnemonic` - Lowercased mnemonic.
+/// * `src` - Source operand text.
+///
+/// # Returns
+///
+/// The cast expression, or the plain expression.
+fn widen_value(mnemonic: &str, src: &str) -> Expr {
+    let inner = parse_expr(src);
+    match cast_type(mnemonic, src) {
+        Some(ty) => Expr::Cast(ty, Box::new(inner)),
+        None => inner,
+    }
+}
+
+/// Resolves the cast type for a widening load.
+///
+/// # Arguments
+///
+/// * `mnemonic` - Lowercased mnemonic.
+/// * `src` - Source operand text.
+///
+/// # Returns
+///
+/// The integer type, or `None`.
+fn cast_type(mnemonic: &str, src: &str) -> Option<&'static str> {
+    let signed = matches!(mnemonic, "movsx" | "movsxd");
+    if !(signed || matches!(mnemonic, "movzx" | "movzb" | "movzw")) {
+        return None;
+    }
+    width_type(&src.to_ascii_lowercase(), signed)
+}
+
+/// Resolves the integer type for a sized memory operand.
+///
+/// # Arguments
+///
+/// * `src` - Lowercased source operand text.
+/// * `signed` - Whether the load sign-extends.
+///
+/// # Returns
+///
+/// The integer type, or `None`.
+fn width_type(src: &str, signed: bool) -> Option<&'static str> {
+    let size = size_of(src)?;
+    Some(integer_type(size, signed))
+}
+
+/// Maps a sized memory operand to its byte width.
+///
+/// # Arguments
+///
+/// * `src` - Lowercased source operand text.
+///
+/// # Returns
+///
+/// The operand size in bytes, or `None`.
+fn size_of(src: &str) -> Option<u8> {
+    let table = [("byte ptr", 1u8), ("word ptr", 2), ("dword ptr", 4)];
+    table.iter().find_map(|&(needle, size)| src.contains(needle).then_some(size))
+}
+
+/// Maps a byte size and signedness to an integer type name.
+///
+/// # Arguments
+///
+/// * `size` - Operand size in bytes.
+/// * `signed` - Whether the type is signed.
+///
+/// # Returns
+///
+/// The integer type name.
+fn integer_type(size: u8, signed: bool) -> &'static str {
+    match (size, signed) {
+        (1, true) => "int8_t",
+        (1, false) => "uint8_t",
+        (2, true) => "int16_t",
+        (2, false) => "uint16_t",
+        (_, true) => "int32_t",
+        (_, false) => "uint32_t",
+    }
 }
 
 /// Reports whether operand text denotes a memory location.
@@ -1057,6 +1146,14 @@ mod tests {
         let lifted = lift(&line(0x1000, "mov rax, rbx"), Arch::X86_64);
         let expected = Inst::Assign { dst: Expr::Reg("rax".into()), src: Expr::Reg("rbx".into()) };
         assert_eq!(lifted.inst, expected);
+    }
+
+    /// Verifies widening loads resolve to typed casts.
+    #[test]
+    fn test_cast_type_sizes() {
+        assert_eq!(cast_type("movzx", "byte ptr [rbx]"), Some("uint8_t"));
+        assert_eq!(cast_type("movsx", "word ptr [rbx]"), Some("int16_t"));
+        assert_eq!(cast_type("mov", "byte ptr [rbx]"), None);
     }
 
     /// Verifies that a memory store lifts to a store instruction.

@@ -877,6 +877,7 @@ fn render_expr(expr: &Expr) -> String {
         Expr::Imm(value) => format!("0x{value:x}"),
         Expr::Mem(inner) => format!("*({})", render_expr(inner)),
         Expr::Bin(op, lhs, rhs) => format!("({} {op} {})", render_expr(lhs), render_expr(rhs)),
+        Expr::Cast(ty, inner) => format!("({ty}){}", render_expr(inner)),
         Expr::Raw(text) => text.clone(),
     }
 }

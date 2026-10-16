@@ -212,7 +212,8 @@ fn tool_catalog() -> Value {
 fn diff_tools() -> Value {
     json!([
         {"name": "compare_binaries", "description": "Differentially compares two targets: added and removed imports, strings, capabilities, rules, and crypto constants.", "inputSchema": {"type": "object", "properties": {"path_a": {"type": "string"}, "path_b": {"type": "string"}}, "required": ["path_a", "path_b"]}},
-        {"name": "get_evidence_bundle", "description": "Returns the audit-grade evidence bundle for the active target as JSON (addressable, content-addressed items plus coverage and unknowns).", "inputSchema": {"type": "object"}}
+        {"name": "get_evidence_bundle", "description": "Returns the audit-grade evidence bundle for the active target as JSON (addressable, content-addressed items plus coverage and unknowns).", "inputSchema": {"type": "object"}},
+        {"name": "get_sbom", "description": "Returns a CycloneDX SBOM for the active target as JSON (toolchain and recovered components).", "inputSchema": {"type": "object"}}
     ])
 }
 
@@ -363,8 +364,26 @@ fn dispatch_diff_tool(s: &ServerSession, name: &str, args: &Value) -> Option<Str
     match name {
         "compare_binaries" => Some(call_compare(args)),
         "get_evidence_bundle" => Some(call_evidence(s)),
+        "get_sbom" => Some(call_sbom(s)),
         _ => None,
     }
+}
+
+/// Returns the active target's `CycloneDX` `SBOM` as JSON.
+///
+/// # Arguments
+///
+/// * `s` - Active server session.
+///
+/// # Returns
+///
+/// The SBOM JSON.
+fn call_sbom(s: &ServerSession) -> String {
+    let Some(analysis) = &s.active else {
+        return "No target opened. Call `open_binary` first.".to_string();
+    };
+    let provenance = rea_engine::provenance::recover(analysis);
+    rea_engine::sbom::cyclonedx(&analysis.name, env!("CARGO_PKG_VERSION"), &provenance)
 }
 
 /// Returns the active target's evidence bundle as JSON.
@@ -1560,7 +1579,7 @@ mod tests {
     fn test_tools_catalog_count() {
         let tools = tool_catalog();
         assert!(tools.is_array());
-        assert_eq!(tools.as_array().map_or(0, Vec::len), 35);
+        assert_eq!(tools.as_array().map_or(0, Vec::len), 36);
     }
 
     /// Verifies runtime tool handlers reject empty sessions.

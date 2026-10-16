@@ -1451,6 +1451,52 @@ fn print_verify(report: &rea_engine::evidence::VerifyReport) {
     );
 }
 
+/// Writes a `CycloneDX` `SBOM` beside the target.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// Exit code.
+#[must_use]
+pub fn sbom_cmd(path: &Path) -> ExitCode {
+    let Some((analysis, _bytes)) = load(path) else {
+        eprintln!("rea sbom: failed to analyze target");
+        return ExitCode::FAILURE;
+    };
+    write_sbom(path, &analysis);
+    ExitCode::SUCCESS
+}
+
+/// Builds and writes the SBOM.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+/// * `analysis` - Completed analysis.
+fn write_sbom(path: &Path, analysis: &Analysis) {
+    let provenance = rea_engine::provenance::recover(analysis);
+    let json = rea_engine::sbom::cyclonedx(&analysis.name, env!("CARGO_PKG_VERSION"), &provenance);
+    print!("{json}");
+    let _ = fs::write(sbom_path(path), &json);
+}
+
+/// Builds the SBOM path beside a target.
+///
+/// # Arguments
+///
+/// * `path` - Target file path.
+///
+/// # Returns
+///
+/// The SBOM path.
+fn sbom_path(path: &Path) -> PathBuf {
+    let dir = path.parent().unwrap_or_else(|| Path::new(""));
+    dir.join(format!("re-{}.sbom.json", stem_of(path)))
+}
+
 /// Disassembles an 8051 (MCS-51) firmware region.
 ///
 /// # Arguments

@@ -145,6 +145,12 @@ pub mod evm;
 /// Apple property list and application bundle analysis.
 pub mod plist;
 
+/// Build provenance recovery.
+pub mod provenance;
+
+/// Software bill of materials generation.
+pub mod sbom;
+
 /// JavaScript source map resolution.
 pub mod sourcemap;
 

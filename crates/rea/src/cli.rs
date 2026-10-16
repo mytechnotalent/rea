@@ -55,6 +55,7 @@ usage:
   rea diff <a> <b>            differentially compare two targets
   rea evidence <file>         write an audit-grade evidence bundle
   rea verify <bundle.json>    verify an evidence bundle's integrity
+  rea sbom <file>             write a CycloneDX SBOM beside the target
   rea xrefs <file> <addr>     query cross-references to address or symbol
   rea analyze <file>          alias for one-shot analysis
 
@@ -326,8 +327,23 @@ fn dispatch_inspect7(cmd: &str, rest: &[String]) -> Option<ExitCode> {
         "diff" => Some(dispatch_diff(rest)),
         "evidence" => Some(dispatch_evidence(rest)),
         "verify" => Some(dispatch_verify(rest)),
+        "sbom" => Some(dispatch_sbom(rest)),
         _ => None,
     }
+}
+
+/// Dispatches the SBOM subcommand.
+///
+/// # Arguments
+///
+/// * `rest` - Trailing command-line arguments.
+///
+/// # Returns
+///
+/// Process exit code.
+fn dispatch_sbom(rest: &[String]) -> ExitCode {
+    rest.first()
+        .map_or_else(usage_error, |t| crate::inspect::sbom_cmd(Path::new(t)))
 }
 
 /// Dispatches the evidence bundle subcommand.

@@ -217,8 +217,31 @@ fn collect(analysis: &Analysis, bytes: &[u8]) -> Vec<Item> {
     push_rules(&mut items, analysis, bytes);
     push_vulns(&mut items, analysis);
     push_crypto(&mut items, bytes);
-    push_functions(&mut items, analysis);
+    push_code(&mut items, analysis);
     items
+}
+
+/// Appends function and provenance-component evidence.
+///
+/// # Arguments
+///
+/// * `items` - Accumulated items.
+/// * `analysis` - Completed analysis.
+fn push_code(items: &mut Vec<Item>, analysis: &Analysis) {
+    push_functions(items, analysis);
+    push_components(items, analysis);
+}
+
+/// Appends recovered provenance-component evidence.
+///
+/// # Arguments
+///
+/// * `items` - Accumulated items.
+/// * `analysis` - Completed analysis.
+fn push_components(items: &mut Vec<Item>, analysis: &Analysis) {
+    for component in crate::provenance::recover(analysis).components.iter().take(ITEM_LIMIT) {
+        items.push(medium("component", &component.name, &component.version));
+    }
 }
 
 /// Appends capability evidence.

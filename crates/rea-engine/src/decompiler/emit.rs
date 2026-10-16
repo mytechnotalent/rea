@@ -248,6 +248,25 @@ fn body_slice<'a>(ctx: &Ctx<'a>, index: usize, drop_last: bool) -> &'a [Line] {
     &ctx.lines[block.first..end]
 }
 
+/// Returns the assembly text of a condition block's final line.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `index` - Block index.
+///
+/// # Returns
+///
+/// The final line assembly text, or an empty string.
+fn cond_block_tail<'a>(ctx: &Ctx<'a>, index: usize) -> &'a str {
+    let block = &ctx.graph.blocks[index];
+    block
+        .end
+        .checked_sub(1)
+        .and_then(|i| ctx.lines.get(i))
+        .map_or("", |l| l.asm.as_str())
+}
+
 /// Appends a recovered if/else or if-then diamond.
 ///
 /// # Arguments
@@ -265,7 +284,7 @@ fn append_diamond(
     diamond: &Diamond,
 ) {
     append_statements(out, ctx, body_slice(ctx, index, true), index, level);
-    let cond = condition_expr(&diamond.cond);
+    let cond = cond_guard(&diamond.cond, cond_block_tail(ctx, index));
     out.push(format!("{}if ({cond}) {{", indent(level)));
     append_arm(out, ctx, diamond.then_block, level + 1);
     append_else(out, ctx, level, diamond);
@@ -333,9 +352,23 @@ fn append_statements(
     index: usize,
     level: usize,
 ) {
-    for line in body {
-        out.push(statement(line, ctx, index, level));
+    for (position, line) in body.iter().enumerate() {
+        out.push(statement(line, prev_of(body, position), ctx, index, level));
     }
+}
+
+/// Returns the assembly text of a body line's predecessor.
+///
+/// # Arguments
+///
+/// * `body` - Block body lines.
+/// * `position` - Line position.
+///
+/// # Returns
+///
+/// The predecessor assembly text, or an empty string.
+fn prev_of(body: &[Line], position: usize) -> &str {
+    body.get(position.wrapping_sub(1)).map_or("", |l| l.asm.as_str())
 }
 
 /// Formats a block label.
@@ -376,12 +409,12 @@ fn indent(level: usize) -> String {
 /// # Returns
 ///
 /// The indented statement.
-fn statement(line: &Line, ctx: &Ctx<'_>, index: usize, level: usize) -> String {
+fn statement(line: &Line, prev: &str, ctx: &Ctx<'_>, index: usize, level: usize) -> String {
     let pad = indent(level);
     if let Inst::Other(text) = &line.inst {
         return format!("{pad}// {text}");
     }
-    render_line(&pad, line, ctx, index)
+    render_line(&pad, line, prev, ctx, index)
 }
 
 /// Renders a non-comment statement with its assembly comment.
@@ -396,9 +429,9 @@ fn statement(line: &Line, ctx: &Ctx<'_>, index: usize, level: usize) -> String {
 /// # Returns
 ///
 /// The indented statement.
-fn render_line(pad: &str, line: &Line, ctx: &Ctx<'_>, index: usize) -> String {
+fn render_line(pad: &str, line: &Line, prev: &str, ctx: &Ctx<'_>, index: usize) -> String {
     let asm = &line.asm;
-    let body = control_text(&line.inst, ctx, index);
+    let body = control_text(&line.inst, prev, ctx, index);
     let text = body.unwrap_or_else(|| render_value(&line.inst));
     format!("{pad}{text}  // {asm}")
 }
@@ -414,11 +447,11 @@ fn render_line(pad: &str, line: &Line, ctx: &Ctx<'_>, index: usize) -> String {
 /// # Returns
 ///
 /// The statement text, or `None` for non-control instructions.
-fn control_text(inst: &Inst, ctx: &Ctx<'_>, index: usize) -> Option<String> {
+fn control_text(inst: &Inst, prev: &str, ctx: &Ctx<'_>, index: usize) -> Option<String> {
     match inst {
         Inst::Ret => Some("return;".to_string()),
         Inst::Jump(target) => Some(jump_text(*target, ctx, index)),
-        Inst::JumpIf { cond, target } => Some(cond_text(cond, *target, ctx, index)),
+        Inst::JumpIf { cond, target } => Some(cond_text(cond, *target, prev, ctx, index)),
         _ => None,
     }
 }
@@ -453,12 +486,65 @@ fn jump_text(target: u64, ctx: &Ctx<'_>, index: usize) -> String {
 /// # Returns
 ///
 /// The statement text.
-fn cond_text(cond: &str, target: u64, ctx: &Ctx<'_>, index: usize) -> String {
-    let guard = condition_expr(cond);
+fn cond_text(cond: &str, target: u64, prev: &str, ctx: &Ctx<'_>, index: usize) -> String {
+    let guard = cond_guard(cond, prev);
     if is_back_edge(target, ctx, index) {
         return format!("if ({guard}) continue;");
     }
     format!("if ({guard}) goto lbl_{target:x};")
+}
+
+/// Builds a condition, using the preceding compare when available.
+///
+/// # Arguments
+///
+/// * `cond` - Branch condition text.
+/// * `prev` - Preceding instruction assembly.
+///
+/// # Returns
+///
+/// The C condition expression.
+fn cond_guard(cond: &str, prev: &str) -> String {
+    if is_operator(cond) {
+        if let Some(expr) = compare_guard(cond, prev) {
+            return expr;
+        }
+    }
+    condition_expr(cond)
+}
+
+/// Reports whether a condition is a bare comparison operator.
+///
+/// # Arguments
+///
+/// * `cond` - Branch condition text.
+///
+/// # Returns
+///
+/// `true` for a comparison operator.
+fn is_operator(cond: &str) -> bool {
+    matches!(cond, "==" | "!=" | "<" | "<=" | ">" | ">=")
+}
+
+/// Builds a condition from a preceding `cmp` or `test`.
+///
+/// # Arguments
+///
+/// * `cond` - Branch condition operator.
+/// * `prev` - Preceding instruction assembly.
+///
+/// # Returns
+///
+/// The C condition, or `None`.
+fn compare_guard(cond: &str, prev: &str) -> Option<String> {
+    let (mnemonic, rest) = prev.split_once(char::is_whitespace)?;
+    let (lhs, rhs) = rest.split_once(',')?;
+    let (lhs, rhs) = (lhs.trim(), rhs.trim());
+    match mnemonic.to_ascii_lowercase().as_str() {
+        "cmp" => Some(format!("{lhs} {cond} {rhs}")),
+        "test" => Some(format!("{lhs} {cond} 0")),
+        _ => None,
+    }
 }
 
 /// Builds a valid C condition from an IR branch condition.
@@ -471,7 +557,7 @@ fn cond_text(cond: &str, target: u64, ctx: &Ctx<'_>, index: usize) -> String {
 ///
 /// The C condition expression.
 fn condition_expr(cond: &str) -> String {
-    if matches!(cond, "==" | "!=" | "<" | "<=" | ">" | ">=") {
+    if is_operator(cond) {
         return format!("flags {cond} 0");
     }
     cond.to_string()
@@ -599,6 +685,16 @@ mod tests {
         assert!(text.starts_with("void sub_1000(void) {"));
         assert!(text.ends_with('}'));
         assert!(text.contains("return;"));
+    }
+
+    /// Verifies that branch conditions reuse preceding compare operands.
+    #[test]
+    fn test_cond_guard_uses_compare() {
+        let less = compare_guard("<", "cmp rax,rbx");
+        let zero = compare_guard("==", "test esi,esi");
+        assert_eq!(less.as_deref(), Some("rax < rbx"));
+        assert_eq!(zero.as_deref(), Some("esi == 0"));
+        assert_eq!(cond_guard("!=", "jne 0x1008"), "flags != 0");
     }
 
     /// Verifies that a self-loop renders as a while loop with continue.

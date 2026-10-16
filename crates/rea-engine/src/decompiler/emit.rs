@@ -114,11 +114,198 @@ fn visible(ctx: &Ctx<'_>) -> Vec<usize> {
 /// The indentation depth after the block.
 fn emit_block(out: &mut Vec<String>, ctx: &Ctx<'_>, index: usize, depth: usize) -> usize {
     let opens = ctx.structure.opens_at(index);
-    open_loops(out, opens, depth);
-    emit_body(out, ctx, index, depth + opens);
+    let guard = loop_guard(ctx, index, opens);
+    let inner = open_region(out, depth, opens, guard.as_deref());
+    emit_body(out, ctx, index, depth + inner, guard.is_some());
     let closes = ctx.structure.closes_at(index);
-    close_loops(out, closes, depth + opens);
-    depth + opens - closes
+    close_loops(out, closes, depth + inner);
+    depth + inner - closes
+}
+
+/// Emits a loop or region opener and returns its nesting depth.
+///
+/// # Arguments
+///
+/// * `out` - Accumulated output lines.
+/// * `depth` - Current indentation depth.
+/// * `opens` - Number of loops opening.
+/// * `guard` - Pre-tested loop condition, when present.
+///
+/// # Returns
+///
+/// The number of levels opened.
+fn open_region(out: &mut Vec<String>, depth: usize, opens: usize, guard: Option<&str>) -> usize {
+    if let Some(text) = guard {
+        out.push(format!("{}while ({text}) {{", indent(depth)));
+        return 1;
+    }
+    open_loops(out, opens, depth);
+    opens
+}
+
+/// Recovers a pre-tested loop condition from a header exit test.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `index` - Header block index.
+/// * `opens` - Number of loops opening at the block.
+///
+/// # Returns
+///
+/// The inverted loop condition, or `None`.
+fn loop_guard(ctx: &Ctx<'_>, index: usize, opens: usize) -> Option<String> {
+    let loop_id = single_open_loop(ctx, index, opens)?;
+    let nodes = &ctx.structure.loops.get(loop_id)?.nodes;
+    if exits_loop(ctx, index, nodes) {
+        guard_text(ctx, index)
+    } else {
+        None
+    }
+}
+
+/// Returns the loop index when exactly one loop opens without a diamond.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `index` - Block index.
+/// * `opens` - Number of loops opening at the block.
+///
+/// # Returns
+///
+/// The loop index, or `None`.
+fn single_open_loop(ctx: &Ctx<'_>, index: usize, opens: usize) -> Option<usize> {
+    if opens != 1 || ctx.structure.diamonds.contains_key(&index) {
+        return None;
+    }
+    ctx.structure.opens.get(&index)?.first().copied()
+}
+
+/// Reports whether a header's branch target leaves the loop.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `index` - Header block index.
+/// * `nodes` - Loop member block indices.
+///
+/// # Returns
+///
+/// `true` when the branch target is outside the loop.
+fn exits_loop(ctx: &Ctx<'_>, index: usize, nodes: &std::collections::BTreeSet<usize>) -> bool {
+    match exit_target(ctx, index) {
+        Some(exit) => !nodes.contains(&exit),
+        None => false,
+    }
+}
+
+/// Resolves a header block's conditional branch target to a block index.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `index` - Block index.
+///
+/// # Returns
+///
+/// The target block index, or `None`.
+fn exit_target(ctx: &Ctx<'_>, index: usize) -> Option<usize> {
+    let block = &ctx.graph.blocks[index];
+    let line = ctx.lines.get(block.end.checked_sub(1)?)?;
+    let Inst::JumpIf { target, .. } = line.inst else {
+        return None;
+    };
+    block_at(ctx, target)
+}
+
+/// Builds the inverted loop condition from the header's exit test.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `index` - Header block index.
+///
+/// # Returns
+///
+/// The inverted condition, or `None`.
+fn guard_text(ctx: &Ctx<'_>, index: usize) -> Option<String> {
+    let block = &ctx.graph.blocks[index];
+    let line = ctx.lines.get(block.end.checked_sub(1)?)?;
+    let Inst::JumpIf { cond, .. } = &line.inst else {
+        return None;
+    };
+    let prev = ctx.lines.get(block.end.wrapping_sub(2))?.asm.as_str();
+    compare_guard(&negate_operator(cond)?, prev)
+}
+
+/// Finds a block index by start address.
+///
+/// # Arguments
+///
+/// * `ctx` - Emission context.
+/// * `address` - Block start address.
+///
+/// # Returns
+///
+/// The block index, or `None`.
+fn block_at(ctx: &Ctx<'_>, address: u64) -> Option<usize> {
+    ctx.graph.blocks.iter().position(|block| block.start == address)
+}
+
+/// Returns the logical negation of a comparison operator.
+///
+/// # Arguments
+///
+/// * `cond` - Comparison operator.
+///
+/// # Returns
+///
+/// The negated operator, or `None`.
+fn negate_operator(cond: &str) -> Option<String> {
+    let neg = opposition(cond);
+    let neg = if neg.is_empty() {
+        equality_opposition(cond)
+    } else {
+        neg
+    };
+    (!neg.is_empty()).then(|| neg.to_string())
+}
+
+/// Returns the ordering negation of a comparison operator.
+///
+/// # Arguments
+///
+/// * `cond` - Comparison operator.
+///
+/// # Returns
+///
+/// The negated operator, or an empty string.
+fn opposition(cond: &str) -> &'static str {
+    match cond {
+        "<" => ">=",
+        "<=" => ">",
+        ">" => "<=",
+        ">=" => "<",
+        _ => "",
+    }
+}
+
+/// Returns the equality negation of a comparison operator.
+///
+/// # Arguments
+///
+/// * `cond` - Comparison operator.
+///
+/// # Returns
+///
+/// The negated operator, or an empty string.
+fn equality_opposition(cond: &str) -> &'static str {
+    match cond {
+        "==" => "!=",
+        "!=" => "==",
+        _ => "",
+    }
 }
 
 /// Emits a block body, structured as a diamond when possible.
@@ -129,10 +316,11 @@ fn emit_block(out: &mut Vec<String>, ctx: &Ctx<'_>, index: usize, depth: usize) 
 /// * `ctx` - Emission context.
 /// * `index` - Block index.
 /// * `level` - Indentation depth.
-fn emit_body(out: &mut Vec<String>, ctx: &Ctx<'_>, index: usize, level: usize) {
+/// * `drop_last` - Whether to omit the block's final line.
+fn emit_body(out: &mut Vec<String>, ctx: &Ctx<'_>, index: usize, level: usize, drop_last: bool) {
     match ctx.structure.diamonds.get(&index) {
         Some(diamond) => append_diamond(out, ctx, index, level, diamond),
-        None => append_block(out, ctx, index, level),
+        None => append_block(out, ctx, index, level, drop_last),
     }
 }
 
@@ -170,12 +358,12 @@ fn close_loops(out: &mut Vec<String>, count: usize, depth: usize) {
 /// * `ctx` - Emission context.
 /// * `index` - Block index.
 /// * `level` - Indentation depth.
-fn append_block(out: &mut Vec<String>, ctx: &Ctx<'_>, index: usize, level: usize) {
+fn append_block(out: &mut Vec<String>, ctx: &Ctx<'_>, index: usize, level: usize, drop_last: bool) {
     if needs_label(ctx, index) {
         let start = ctx.graph.blocks[index].start;
         out.push(format!("{}{}", indent(level), label(start)));
     }
-    append_statements(out, ctx, body_slice(ctx, index, false), index, level);
+    append_statements(out, ctx, body_slice(ctx, index, drop_last), index, level);
 }
 
 /// Reports whether a block still needs an emitted label.
@@ -695,6 +883,31 @@ mod tests {
         assert_eq!(less.as_deref(), Some("rax < rbx"));
         assert_eq!(zero.as_deref(), Some("esi == 0"));
         assert_eq!(cond_guard("!=", "jne 0x1008"), "flags != 0");
+    }
+
+    /// Builds a pre-tested loop header with an exit test.
+    ///
+    /// # Returns
+    ///
+    /// The synthetic instruction lines.
+    fn guard_body() -> Vec<Line> {
+        let jump = Inst::JumpIf { cond: "<".into(), target: 0x1010 };
+        vec![
+            line(0x1000, Inst::Other("cmp rax, rbx".into()), "cmp rax,rbx"),
+            line(0x1004, jump, "jb 0x1010"),
+            line(0x1008, Inst::Jump(0x1000), "jmp 0x1000"),
+            line(0x1010, Inst::Ret, "ret"),
+        ]
+    }
+
+    /// Verifies that a pre-tested header hoists a real while condition.
+    #[test]
+    fn test_render_loop_guard() {
+        let lines = guard_body();
+        let graph = build(&lines);
+        let text = render("f", &lines, &graph);
+        assert!(text.contains("while (rax >= rbx) {"));
+        assert!(!text.contains("// jb 0x1010"));
     }
 
     /// Verifies that a self-loop renders as a while loop with continue.
